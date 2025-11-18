@@ -19,27 +19,3 @@ CMD ["node", "server.js"]
 ✅ **Saved as:** `Dockerfile`
 
 ---
-
-## 📄 FILE 3: .gitignore
-
-**Create file:** `.gitignore`
-
-**Copy this code:**
-```
-node_modules/
-package-lock.json
-.env
-.env.local
-.env.*.local
-logs/
-*.log
-npm-debug.log*
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
-*.swp
-*.swo
-test/
-*.test.js
-.railway/
