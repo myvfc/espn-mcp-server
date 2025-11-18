@@ -1,6 +1,7 @@
 /**
  * ESPN MCP SERVER
  * Multi-source sports data API combining ESPN, CFBD, and NCAA
+ * JSON-RPC 2.0 compliant MCP endpoint
  * Created by Kevin - The Botosphere
  */
 
@@ -54,11 +55,11 @@ app.get('/', (req, res) => {
   res.json({
     name: 'ESPN MCP Server',
     version: '2.0.0',
-    description: 'Multi-source college sports data API',
+    description: 'Multi-source college sports data API with JSON-RPC 2.0 MCP endpoint',
     sources: ['ESPN', 'CollegeFootballData.com', 'NCAA.com'],
     endpoints: {
       mcp: {
-        '/mcp': 'MCP protocol endpoint (POST, requires Bearer token)'
+        '/mcp': 'JSON-RPC 2.0 MCP endpoint (POST, requires Bearer token)'
       },
       espn: {
         '/score': 'Get current/recent game score for a team',
@@ -83,14 +84,6 @@ app.get('/', (req, res) => {
         '/clear-cache': 'Clear all caches'
       }
     },
-    examples: {
-      mcp: 'POST /mcp with Bearer token',
-      score: '/score?team=oklahoma&sport=football&format=text',
-      schedule: '/schedule?team=oklahoma&sport=football&limit=5',
-      scoreboard: '/scoreboard?sport=football',
-      recruiting: '/cfbd/recruiting?team=oklahoma&year=2025',
-      ncaa: '/ncaa/scoreboard?sport=football&division=fbs'
-    },
     status: 'operational',
     timestamp: new Date().toISOString()
   });
@@ -108,9 +101,8 @@ app.get('/health', (req, res) => {
 });
 
 /**
- * MCP ENDPOINT - For bot integration
+ * MCP ENDPOINT - JSON-RPC 2.0 compliant
  * Requires Bearer token authentication
- * Supports both tool discovery and tool execution
  */
 app.post('/mcp', async (req, res) => {
   try {
@@ -119,288 +111,432 @@ app.post('/mcp', async (req, res) => {
     const apiKey = process.env.MCP_API_KEY || 'default-key-change-me';
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ 
-        success: false,
-        error: 'Missing or invalid authorization header. Use: Authorization: Bearer YOUR_API_KEY' 
+      return res.json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32001,
+          message: 'Missing or invalid authorization header'
+        },
+        id: req.body?.id || null
       });
     }
     
-    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+    const token = authHeader.substring(7);
     
     if (token !== apiKey) {
-      return res.status(401).json({ 
-        success: false,
-        error: 'Invalid API key' 
-      });
-    }
-    
-    // Parse MCP request
-    const { tool, parameters = {}, action } = req.body;
-    
-    // Handle discovery request
-    if (action === 'discover' || !tool) {
       return res.json({
-        success: true,
-        tools: [
-          {
-            name: 'get_score',
-            description: 'Get current or recent game score for a team',
-            parameters: {
-              team: { type: 'string', default: 'oklahoma', description: 'Team name' },
-              sport: { type: 'string', default: 'football', description: 'Sport (football, mens-basketball, etc.)' }
-            }
-          },
-          {
-            name: 'get_schedule',
-            description: 'Get team schedule',
-            parameters: {
-              team: { type: 'string', default: 'oklahoma', description: 'Team name' },
-              sport: { type: 'string', default: 'football', description: 'Sport' },
-              limit: { type: 'number', default: 5, description: 'Number of games to return' }
-            }
-          },
-          {
-            name: 'get_scoreboard',
-            description: 'Get today\'s games across all teams',
-            parameters: {
-              sport: { type: 'string', default: 'football', description: 'Sport' }
-            }
-          },
-          {
-            name: 'get_rankings',
-            description: 'Get AP Top 25 rankings',
-            parameters: {
-              sport: { type: 'string', default: 'football', description: 'Sport' }
-            }
-          },
-          {
-            name: 'get_recruiting',
-            description: 'Get recruiting class rankings',
-            parameters: {
-              team: { type: 'string', default: 'oklahoma', description: 'Team name' },
-              year: { type: 'number', optional: true, description: 'Year (defaults to current)' }
-            }
-          },
-          {
-            name: 'get_talent',
-            description: 'Get team talent composite rating',
-            parameters: {
-              team: { type: 'string', default: 'oklahoma', description: 'Team name' },
-              year: { type: 'number', optional: true, description: 'Year' }
-            }
-          },
-          {
-            name: 'get_stats',
-            description: 'Get advanced team statistics (EPA, Success Rate, etc.)',
-            parameters: {
-              team: { type: 'string', default: 'oklahoma', description: 'Team name' },
-              year: { type: 'number', optional: true, description: 'Year' }
-            }
-          },
-          {
-            name: 'get_betting',
-            description: 'Get betting lines and spreads',
-            parameters: {
-              team: { type: 'string', default: 'oklahoma', description: 'Team name' },
-              year: { type: 'number', optional: true, description: 'Year' },
-              week: { type: 'number', optional: true, description: 'Week number' }
-            }
-          },
-          {
-            name: 'get_ratings',
-            description: 'Get SP+ ratings',
-            parameters: {
-              team: { type: 'string', default: 'oklahoma', description: 'Team name' },
-              year: { type: 'number', optional: true, description: 'Year' }
-            }
-          },
-          {
-            name: 'get_records',
-            description: 'Get team records (wins/losses)',
-            parameters: {
-              team: { type: 'string', default: 'oklahoma', description: 'Team name' },
-              year: { type: 'number', optional: true, description: 'Year' }
-            }
-          }
-        ]
+        jsonrpc: '2.0',
+        error: {
+          code: -32002,
+          message: 'Invalid API key'
+        },
+        id: req.body?.id || null
       });
     }
     
-    console.log(`MCP request: ${tool}`, parameters);
+    // Parse JSON-RPC request
+    const { jsonrpc, method, params = {}, id } = req.body;
     
-    // Route to appropriate function
-    let result;
-    
-    switch (tool) {
-      case 'get_score':
-      case 'score':
-        const team = parameters.team || 'oklahoma';
-        const sport = parameters.sport || 'football';
-        const game = await getCurrentGame(team, sport);
-        result = game ? formatGameResponse(game) : `No recent games found for ${team}`;
-        break;
-        
-      case 'get_schedule':
-      case 'schedule':
-        const schedTeam = parameters.team || 'oklahoma';
-        const schedSport = parameters.sport || 'football';
-        const limit = parameters.limit || 5;
-        const schedule = await getTeamSchedule(schedTeam, schedSport);
-        result = formatScheduleResponse(schedule, limit);
-        break;
-        
-      case 'get_scoreboard':
-      case 'scoreboard':
-        const sbSport = parameters.sport || 'football';
-        const scoreboard = await getScoreboard(sbSport);
-        result = formatScoreboardResponse(scoreboard);
-        break;
-        
-      case 'get_rankings':
-      case 'rankings':
-        const rankSport = parameters.sport || 'football';
-        const rankings = await getRankings(rankSport);
-        result = rankings ? formatRankingsResponse(rankings, 25) : 'No rankings available';
-        break;
-        
-      case 'get_recruiting':
-      case 'recruiting':
-        const recTeam = parameters.team || 'oklahoma';
-        const recYear = parameters.year;
-        const recruiting = await getRecruiting(recTeam, recYear);
-        if (recruiting) {
-          result = `🎓 ${recruiting.team} ${recruiting.year} Recruiting Class:\n` +
-                   `• National Rank: #${recruiting.rank}\n` +
-                   `• Total Points: ${recruiting.points}\n` +
-                   `• Commits: ${recruiting.commits}\n` +
-                   `• Average Star Rating: ${recruiting.avgStars}⭐`;
-        } else {
-          result = `No recruiting data found for ${recTeam}`;
-        }
-        break;
-        
-      case 'get_talent':
-      case 'talent':
-        const talentTeam = parameters.team || 'oklahoma';
-        const talentYear = parameters.year;
-        const talent = await getTeamTalent(talentTeam, talentYear);
-        if (talent) {
-          result = `💪 ${talent.team} ${talent.year} Talent Composite:\n` +
-                   `• Talent Rating: ${talent.talent}\n` +
-                   `• National Rank: #${talent.rank}`;
-        } else {
-          result = `No talent data found for ${talentTeam}`;
-        }
-        break;
-        
-      case 'get_stats':
-      case 'stats':
-      case 'advanced_stats':
-        const statsTeam = parameters.team || 'oklahoma';
-        const statsYear = parameters.year;
-        const stats = await getAdvancedStats(statsTeam, statsYear);
-        if (stats) {
-          result = `📊 ${stats.team} ${stats.year} Advanced Stats:\n\n` +
-                   `Offense:\n` +
-                   `• EPA per Play: ${stats.offense.ppa?.toFixed(3) || 'N/A'}\n` +
-                   `• Success Rate: ${stats.offense.successRate?.toFixed(1) || 'N/A'}%\n` +
-                   `• Explosiveness: ${stats.offense.explosiveness?.toFixed(3) || 'N/A'}\n\n` +
-                   `Defense:\n` +
-                   `• EPA per Play: ${stats.defense.ppa?.toFixed(3) || 'N/A'}\n` +
-                   `• Success Rate: ${stats.defense.successRate?.toFixed(1) || 'N/A'}%\n` +
-                   `• Havoc Rate: ${stats.defense.havoc?.total?.toFixed(1) || 'N/A'}%`;
-        } else {
-          result = `No stats found for ${statsTeam}`;
-        }
-        break;
-        
-      case 'get_betting':
-      case 'betting':
-      case 'betting_lines':
-        const betTeam = parameters.team || 'oklahoma';
-        const betYear = parameters.year;
-        const betWeek = parameters.week;
-        const lines = await getBettingLines(betTeam, betYear, betWeek);
-        if (lines && lines.length > 0) {
-          const latest = lines[0];
-          const line = latest.lines && latest.lines.length > 0 ? latest.lines[0] : null;
-          if (line) {
-            result = `💰 ${latest.awayTeam} at ${latest.homeTeam} Betting Lines:\n` +
-                     `• Spread: ${line.formattedSpread || 'N/A'}\n` +
-                     `• Over/Under: ${line.overUnder || 'N/A'}\n` +
-                     `• ${latest.homeTeam} ML: ${line.homeMoneyline || 'N/A'}\n` +
-                     `• ${latest.awayTeam} ML: ${line.awayMoneyline || 'N/A'}`;
-          } else {
-            result = `Betting lines found but no odds available for ${betTeam}`;
-          }
-        } else {
-          result = `No betting lines found for ${betTeam}`;
-        }
-        break;
-        
-      case 'get_ratings':
-      case 'ratings':
-      case 'sp_ratings':
-        const ratTeam = parameters.team || 'oklahoma';
-        const ratYear = parameters.year;
-        const ratings = await getSPRatings(ratTeam, ratYear);
-        if (ratings) {
-          result = `⚡ ${ratings.team} ${ratings.year} SP+ Ratings:\n` +
-                   `• Overall: ${ratings.rating?.toFixed(1)} (#${ratings.ranking})\n` +
-                   `• Offense: ${ratings.offense?.rating?.toFixed(1)} (#${ratings.offense?.ranking})\n` +
-                   `• Defense: ${ratings.defense?.rating?.toFixed(1)} (#${ratings.defense?.ranking})\n` +
-                   `• Special Teams: ${ratings.specialTeams?.rating?.toFixed(1)}`;
-        } else {
-          result = `No SP+ ratings found for ${ratTeam}`;
-        }
-        break;
-        
-      case 'get_records':
-      case 'records':
-        const recTeamName = parameters.team || 'oklahoma';
-        const recYearVal = parameters.year;
-        const records = await getTeamRecords(recTeamName, recYearVal);
-        if (records) {
-          result = `📋 ${records.team} ${records.year} Records:\n` +
-                   `• Overall: ${records.total?.wins}-${records.total?.losses}\n` +
-                   `• Conference: ${records.conferenceGames?.wins}-${records.conferenceGames?.losses}\n` +
-                   `• Home: ${records.homeGames?.wins}-${records.homeGames?.losses}\n` +
-                   `• Away: ${records.awayGames?.wins}-${records.awayGames?.losses}`;
-        } else {
-          result = `No records found for ${recTeamName}`;
-        }
-        break;
-        
-      default:
-        return res.status(400).json({ 
-          success: false,
-          error: `Unknown tool: ${tool}`,
-          availableTools: [
-            'get_score', 'get_schedule', 'get_scoreboard', 'get_rankings',
-            'get_recruiting', 'get_talent', 'get_stats', 'get_betting',
-            'get_ratings', 'get_records'
-          ]
-        });
+    if (jsonrpc !== '2.0') {
+      return res.json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32600,
+          message: 'Invalid Request: jsonrpc must be "2.0"'
+        },
+        id: id || null
+      });
     }
     
-    // Return MCP response
-    res.json({
-      success: true,
-      tool,
-      parameters,
-      result,
-      timestamp: new Date().toISOString()
+    if (!method) {
+      return res.json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32600,
+          message: 'Invalid Request: method is required'
+        },
+        id: id || null
+      });
+    }
+    
+    console.log(`JSON-RPC request: ${method}`, params);
+    
+    // Handle tools/list (discovery)
+    if (method === 'tools/list' || method === 'listTools') {
+      return res.json({
+        jsonrpc: '2.0',
+        result: {
+          tools: [
+            {
+              name: 'get_score',
+              description: 'Get current or recent game score for a team',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  team: {
+                    type: 'string',
+                    description: 'Team name (e.g., oklahoma, texas, alabama)',
+                    default: 'oklahoma'
+                  },
+                  sport: {
+                    type: 'string',
+                    description: 'Sport (football, mens-basketball, womens-basketball, baseball, softball)',
+                    default: 'football'
+                  }
+                }
+              }
+            },
+            {
+              name: 'get_schedule',
+              description: 'Get team schedule with upcoming games',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  team: {
+                    type: 'string',
+                    description: 'Team name',
+                    default: 'oklahoma'
+                  },
+                  sport: {
+                    type: 'string',
+                    description: 'Sport',
+                    default: 'football'
+                  },
+                  limit: {
+                    type: 'number',
+                    description: 'Number of games to return',
+                    default: 5
+                  }
+                }
+              }
+            },
+            {
+              name: 'get_scoreboard',
+              description: 'Get today\'s games across all teams',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  sport: {
+                    type: 'string',
+                    description: 'Sport',
+                    default: 'football'
+                  }
+                }
+              }
+            },
+            {
+              name: 'get_rankings',
+              description: 'Get AP Top 25 rankings',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  sport: {
+                    type: 'string',
+                    description: 'Sport',
+                    default: 'football'
+                  }
+                }
+              }
+            },
+            {
+              name: 'get_recruiting',
+              description: 'Get recruiting class rankings and ratings',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  team: {
+                    type: 'string',
+                    description: 'Team name',
+                    default: 'oklahoma'
+                  },
+                  year: {
+                    type: 'number',
+                    description: 'Year (optional, defaults to current year)'
+                  }
+                }
+              }
+            },
+            {
+              name: 'get_talent',
+              description: 'Get team talent composite rating',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  team: {
+                    type: 'string',
+                    description: 'Team name',
+                    default: 'oklahoma'
+                  },
+                  year: {
+                    type: 'number',
+                    description: 'Year'
+                  }
+                }
+              }
+            },
+            {
+              name: 'get_stats',
+              description: 'Get advanced team statistics (EPA, Success Rate, Explosiveness)',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  team: {
+                    type: 'string',
+                    description: 'Team name',
+                    default: 'oklahoma'
+                  },
+                  year: {
+                    type: 'number',
+                    description: 'Year'
+                  }
+                }
+              }
+            },
+            {
+              name: 'get_betting',
+              description: 'Get betting lines and spreads',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  team: {
+                    type: 'string',
+                    description: 'Team name',
+                    default: 'oklahoma'
+                  },
+                  year: {
+                    type: 'number',
+                    description: 'Year'
+                  },
+                  week: {
+                    type: 'number',
+                    description: 'Week number'
+                  }
+                }
+              }
+            },
+            {
+              name: 'get_ratings',
+              description: 'Get SP+ ratings (advanced team ratings)',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  team: {
+                    type: 'string',
+                    description: 'Team name',
+                    default: 'oklahoma'
+                  },
+                  year: {
+                    type: 'number',
+                    description: 'Year'
+                  }
+                }
+              }
+            },
+            {
+              name: 'get_records',
+              description: 'Get team records (wins, losses, by category)',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  team: {
+                    type: 'string',
+                    description: 'Team name',
+                    default: 'oklahoma'
+                  },
+                  year: {
+                    type: 'number',
+                    description: 'Year'
+                  }
+                }
+              }
+            }
+          ]
+        },
+        id
+      });
+    }
+    
+    // Handle tools/call (tool execution)
+    if (method === 'tools/call' || method === 'callTool') {
+      const toolName = params.name;
+      const toolParams = params.arguments || {};
+      
+      let result;
+      
+      switch (toolName) {
+        case 'get_score':
+          const team = toolParams.team || 'oklahoma';
+          const sport = toolParams.sport || 'football';
+          const game = await getCurrentGame(team, sport);
+          result = game ? formatGameResponse(game) : `No recent games found for ${team}`;
+          break;
+          
+        case 'get_schedule':
+          const schedTeam = toolParams.team || 'oklahoma';
+          const schedSport = toolParams.sport || 'football';
+          const limit = toolParams.limit || 5;
+          const schedule = await getTeamSchedule(schedTeam, schedSport);
+          result = formatScheduleResponse(schedule, limit);
+          break;
+          
+        case 'get_scoreboard':
+          const sbSport = toolParams.sport || 'football';
+          const scoreboard = await getScoreboard(sbSport);
+          result = formatScoreboardResponse(scoreboard);
+          break;
+          
+        case 'get_rankings':
+          const rankSport = toolParams.sport || 'football';
+          const rankings = await getRankings(rankSport);
+          result = rankings ? formatRankingsResponse(rankings, 25) : 'No rankings available';
+          break;
+          
+        case 'get_recruiting':
+          const recTeam = toolParams.team || 'oklahoma';
+          const recYear = toolParams.year;
+          const recruiting = await getRecruiting(recTeam, recYear);
+          if (recruiting) {
+            result = `🎓 ${recruiting.team} ${recruiting.year} Recruiting Class:\n` +
+                     `• National Rank: #${recruiting.rank}\n` +
+                     `• Total Points: ${recruiting.points}\n` +
+                     `• Commits: ${recruiting.commits}\n` +
+                     `• Average Star Rating: ${recruiting.avgStars}⭐`;
+          } else {
+            result = `No recruiting data found for ${recTeam}`;
+          }
+          break;
+          
+        case 'get_talent':
+          const talentTeam = toolParams.team || 'oklahoma';
+          const talentYear = toolParams.year;
+          const talent = await getTeamTalent(talentTeam, talentYear);
+          if (talent) {
+            result = `💪 ${talent.team} ${talent.year} Talent Composite:\n` +
+                     `• Talent Rating: ${talent.talent}\n` +
+                     `• National Rank: #${talent.rank}`;
+          } else {
+            result = `No talent data found for ${talentTeam}`;
+          }
+          break;
+          
+        case 'get_stats':
+          const statsTeam = toolParams.team || 'oklahoma';
+          const statsYear = toolParams.year;
+          const stats = await getAdvancedStats(statsTeam, statsYear);
+          if (stats) {
+            result = `📊 ${stats.team} ${stats.year} Advanced Stats:\n\n` +
+                     `Offense:\n` +
+                     `• EPA per Play: ${stats.offense.ppa?.toFixed(3) || 'N/A'}\n` +
+                     `• Success Rate: ${stats.offense.successRate?.toFixed(1) || 'N/A'}%\n` +
+                     `• Explosiveness: ${stats.offense.explosiveness?.toFixed(3) || 'N/A'}\n\n` +
+                     `Defense:\n` +
+                     `• EPA per Play: ${stats.defense.ppa?.toFixed(3) || 'N/A'}\n` +
+                     `• Success Rate: ${stats.defense.successRate?.toFixed(1) || 'N/A'}%\n` +
+                     `• Havoc Rate: ${stats.defense.havoc?.total?.toFixed(1) || 'N/A'}%`;
+          } else {
+            result = `No stats found for ${statsTeam}`;
+          }
+          break;
+          
+        case 'get_betting':
+          const betTeam = toolParams.team || 'oklahoma';
+          const betYear = toolParams.year;
+          const betWeek = toolParams.week;
+          const lines = await getBettingLines(betTeam, betYear, betWeek);
+          if (lines && lines.length > 0) {
+            const latest = lines[0];
+            const line = latest.lines && latest.lines.length > 0 ? latest.lines[0] : null;
+            if (line) {
+              result = `💰 ${latest.awayTeam} at ${latest.homeTeam} Betting Lines:\n` +
+                       `• Spread: ${line.formattedSpread || 'N/A'}\n` +
+                       `• Over/Under: ${line.overUnder || 'N/A'}\n` +
+                       `• ${latest.homeTeam} ML: ${line.homeMoneyline || 'N/A'}\n` +
+                       `• ${latest.awayTeam} ML: ${line.awayMoneyline || 'N/A'}`;
+            } else {
+              result = `Betting lines found but no odds available`;
+            }
+          } else {
+            result = `No betting lines found for ${betTeam}`;
+          }
+          break;
+          
+        case 'get_ratings':
+          const ratTeam = toolParams.team || 'oklahoma';
+          const ratYear = toolParams.year;
+          const ratings = await getSPRatings(ratTeam, ratYear);
+          if (ratings) {
+            result = `⚡ ${ratings.team} ${ratings.year} SP+ Ratings:\n` +
+                     `• Overall: ${ratings.rating?.toFixed(1)} (#${ratings.ranking})\n` +
+                     `• Offense: ${ratings.offense?.rating?.toFixed(1)} (#${ratings.offense?.ranking})\n` +
+                     `• Defense: ${ratings.defense?.rating?.toFixed(1)} (#${ratings.defense?.ranking})`;
+          } else {
+            result = `No SP+ ratings found for ${ratTeam}`;
+          }
+          break;
+          
+        case 'get_records':
+          const recTeamName = toolParams.team || 'oklahoma';
+          const recYearVal = toolParams.year;
+          const records = await getTeamRecords(recTeamName, recYearVal);
+          if (records) {
+            result = `📋 ${records.team} ${records.year} Records:\n` +
+                     `• Overall: ${records.total?.wins}-${records.total?.losses}\n` +
+                     `• Conference: ${records.conferenceGames?.wins}-${records.conferenceGames?.losses}\n` +
+                     `• Home: ${records.homeGames?.wins}-${records.homeGames?.losses}\n` +
+                     `• Away: ${records.awayGames?.wins}-${records.awayGames?.losses}`;
+          } else {
+            result = `No records found for ${recTeamName}`;
+          }
+          break;
+          
+        default:
+          return res.json({
+            jsonrpc: '2.0',
+            error: {
+              code: -32601,
+              message: `Unknown tool: ${toolName}`
+            },
+            id
+          });
+      }
+      
+      return res.json({
+        jsonrpc: '2.0',
+        result: {
+          content: [
+            {
+              type: 'text',
+              text: result
+            }
+          ]
+        },
+        id
+      });
+    }
+    
+    // Unknown method
+    return res.json({
+      jsonrpc: '2.0',
+      error: {
+        code: -32601,
+        message: `Method not found: ${method}`
+      },
+      id: id || null
     });
     
   } catch (error) {
     console.error('MCP endpoint error:', error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message,
-      tool: req.body?.tool
+    return res.json({
+      jsonrpc: '2.0',
+      error: {
+        code: -32603,
+        message: `Internal error: ${error.message}`
+      },
+      id: req.body?.id || null
     });
   }
 });
+
 /**
  * ESPN ENDPOINTS
  */
@@ -798,7 +934,7 @@ app.use((req, res) => {
   res.status(404).json({ 
     error: 'Endpoint not found',
     availableEndpoints: [
-      'POST /mcp (with Bearer token)',
+      'POST /mcp (JSON-RPC 2.0 with Bearer token)',
       '/score', '/schedule', '/scoreboard', '/rankings',
       '/cfbd/recruiting', '/cfbd/talent', '/cfbd/stats',
       '/ncaa/scoreboard', '/ncaa/rankings'
@@ -818,10 +954,11 @@ app.listen(PORT, () => {
   console.log('='.repeat(60));
   console.log('ESPN MCP SERVER');
   console.log('Multi-Source College Sports Data API');
+  console.log('JSON-RPC 2.0 MCP Compliant');
   console.log('='.repeat(60));
   console.log(`Server running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
-  console.log(`MCP endpoint: http://localhost:${PORT}/mcp (POST)`);
+  console.log(`MCP endpoint: http://localhost:${PORT}/mcp (POST, JSON-RPC 2.0)`);
   console.log(`Documentation: http://localhost:${PORT}/`);
   console.log('='.repeat(60));
   console.log('Sources:');
