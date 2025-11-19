@@ -1,12 +1,8 @@
 #!/usr/bin/env node
 
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
-import axios from "axios";
+import http from 'http';
+import https from 'https';
+import { URL } from 'url';
 
 // Video URL parsers and embed generators
 class VideoEmbedGenerator {
@@ -33,7 +29,7 @@ class VideoEmbedGenerator {
       type: "youtube",
       videoId,
       embedUrl: `https://www.youtube.com/embed/${videoId}`,
-      html: `<iframe width="560" height="315" src="https://www.youtube.com/embed/${videoId}" title="${title}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`,
+      html: `<iframe width="560" height="315" src="https://www.youtube.com/embed/${videoId}" title="${this.escapeHtml(title)}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`,
       thumbnailUrl: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
       watchUrl: `https://www.youtube.com/watch?v=${videoId}`
     };
@@ -44,7 +40,7 @@ class VideoEmbedGenerator {
       type: "vimeo",
       videoId,
       embedUrl: `https://player.vimeo.com/video/${videoId}`,
-      html: `<iframe src="https://player.vimeo.com/video/${videoId}" width="640" height="360" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen title="${title}"></iframe>`,
+      html: `<iframe src="https://player.vimeo.com/video/${videoId}" width="640" height="360" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen title="${this.escapeHtml(title)}"></iframe>`,
       watchUrl: `https://vimeo.com/${videoId}`
     };
   }
@@ -61,9 +57,20 @@ class VideoEmbedGenerator {
     return {
       type: "direct",
       embedUrl: url,
-      html: `<video width="640" height="360" controls><source src="${url}" type="${videoType}">Your browser does not support the video tag.</video>`,
+      html: `<video width="640" height="360" controls><source src="${this.escapeHtml(url)}" type="${videoType}">Your browser does not support the video tag.</video>`,
       watchUrl: url
     };
+  }
+
+  static escapeHtml(text) {
+    const map = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, m => map[m]);
   }
 
   static generateEmbed(url, title = "Video") {
@@ -88,7 +95,7 @@ class VideoEmbedGenerator {
     return {
       type: "link",
       embedUrl: url,
-      html: `<a href="${url}" target="_blank">${title}</a>`,
+      html: `<a href="${this.escapeHtml(url)}" target="_blank">${this.escapeHtml(title)}</a>`,
       watchUrl: url
     };
   }
@@ -100,14 +107,30 @@ class ESPNHandler {
     this.baseUrl = "https://site.api.espn.com/apis/site/v2/sports";
   }
 
+  async fetch(url) {
+    return new Promise((resolve, reject) => {
+      const client = url.startsWith('https') ? https : http;
+      client.get(url, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(data));
+          } catch (e) {
+            reject(new Error('Invalid JSON response'));
+          }
+        });
+      }).on('error', reject);
+    });
+  }
+
   async getSchedule(sport = "football", league = "college-football", teamId = null) {
     try {
       const url = teamId 
         ? `${this.baseUrl}/${sport}/${league}/teams/${teamId}/schedule`
         : `${this.baseUrl}/${sport}/${league}/scoreboard`;
       
-      const response = await axios.get(url);
-      return response.data;
+      return await this.fetch(url);
     } catch (error) {
       throw new Error(`ESPN API Error: ${error.message}`);
     }
@@ -116,8 +139,7 @@ class ESPNHandler {
   async getTeamInfo(sport = "football", league = "college-football", teamId) {
     try {
       const url = `${this.baseUrl}/${sport}/${league}/teams/${teamId}`;
-      const response = await axios.get(url);
-      return response.data;
+      return await this.fetch(url);
     } catch (error) {
       throw new Error(`ESPN API Error: ${error.message}`);
     }
@@ -126,26 +148,25 @@ class ESPNHandler {
   async getScores(sport = "football", league = "college-football") {
     try {
       const url = `${this.baseUrl}/${sport}/${league}/scoreboard`;
-      const response = await axios.get(url);
-      return response.data;
+      return await this.fetch(url);
     } catch (error) {
       throw new Error(`ESPN API Error: ${error.message}`);
     }
   }
 }
 
-// Video Database Handler (for your OU Sooners videos)
+// Video Database Handler
 class VideoDatabase {
   constructor() {
     this.videos = [];
   }
 
-  // Load videos from your data source (Supabase, CSV, etc.)
   async loadVideos(videos) {
     this.videos = videos.map(video => ({
       ...video,
       embed: VideoEmbedGenerator.generateEmbed(video.url, video.title)
     }));
+    console.error(`Loaded ${this.videos.length} videos into database`);
   }
 
   searchVideos(query, limit = 10) {
@@ -171,24 +192,15 @@ class VideoDatabase {
       .sort((a, b) => new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0))
       .slice(0, limit);
   }
+
+  getAllVideos() {
+    return this.videos;
+  }
 }
 
 // Initialize handlers
 const espnHandler = new ESPNHandler();
 const videoDatabase = new VideoDatabase();
-
-// Create MCP Server
-const server = new Server(
-  {
-    name: "espn-video-server",
-    version: "1.0.0",
-  },
-  {
-    capabilities: {
-      tools: {},
-    },
-  }
-);
 
 // Format video results with embeds
 function formatVideoResults(videos, includeEmbed = true) {
@@ -217,298 +229,215 @@ function formatVideoResults(videos, includeEmbed = true) {
   });
 }
 
-// List available tools
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return {
-    tools: [
-      {
-        name: "search_videos",
-        description: "Search for Oklahoma Sooners videos. Returns videos with embedded players that can be displayed directly in the chat.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            query: {
-              type: "string",
-              description: "Search query (e.g., 'Billy Sims', '2000 Nebraska game', 'highlights')",
-            },
-            limit: {
-              type: "number",
-              description: "Maximum number of results to return (default: 10)",
-              default: 10,
-            },
-            include_embed: {
-              type: "boolean",
-              description: "Include video embed HTML (default: true)",
-              default: true,
-            }
-          },
-          required: ["query"],
-        },
-      },
-      {
-        name: "get_recent_videos",
-        description: "Get the most recent Oklahoma Sooners videos with embedded players.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            limit: {
-              type: "number",
-              description: "Number of recent videos to return (default: 10)",
-              default: 10,
-            },
-            include_embed: {
-              type: "boolean",
-              description: "Include video embed HTML (default: true)",
-              default: true,
-            }
-          },
-        },
-      },
-      {
-        name: "get_videos_by_category",
-        description: "Get videos by category (highlights, full games, interviews, etc.) with embedded players.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            category: {
-              type: "string",
-              description: "Video category (e.g., 'highlights', 'full-games', 'interviews', 'classic-games')",
-            },
-            limit: {
-              type: "number",
-              description: "Maximum number of results (default: 10)",
-              default: 10,
-            },
-            include_embed: {
-              type: "boolean",
-              description: "Include video embed HTML (default: true)",
-              default: true,
-            }
-          },
-          required: ["category"],
-        },
-      },
-      {
-        name: "get_espn_schedule",
-        description: "Get ESPN schedule for Oklahoma Sooners or other college football teams.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            sport: {
-              type: "string",
-              description: "Sport type (default: 'football')",
-              default: "football",
-            },
-            league: {
-              type: "string",
-              description: "League (default: 'college-football')",
-              default: "college-football",
-            },
-            team_id: {
-              type: "string",
-              description: "ESPN Team ID (Oklahoma is '201')",
-            }
-          },
-        },
-      },
-      {
-        name: "get_espn_scores",
-        description: "Get current scores and game information from ESPN.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            sport: {
-              type: "string",
-              description: "Sport type (default: 'football')",
-              default: "football",
-            },
-            league: {
-              type: "string",
-              description: "League (default: 'college-football')",
-              default: "college-football",
-            }
-          },
-        },
-      },
-      {
-        name: "load_video_database",
-        description: "Load videos from a JSON array into the searchable database. Use this to initialize or update the video collection.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            videos: {
-              type: "array",
-              description: "Array of video objects with properties: title, url, description, publishedAt, category, duration, views",
-              items: {
-                type: "object",
-                properties: {
-                  title: { type: "string" },
-                  url: { type: "string" },
-                  description: { type: "string" },
-                  publishedAt: { type: "string" },
-                  category: { type: "string" },
-                  duration: { type: "string" },
-                  views: { type: "number" }
-                },
-                required: ["title", "url"]
-              }
-            }
-          },
-          required: ["videos"],
-        },
-      },
-    ],
-  };
-});
-
-// Handle tool calls
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
-
+// Request handler
+async function handleRequest(method, path, params) {
   try {
-    switch (name) {
-      case "search_videos": {
-        const query = args.query;
-        const limit = args.limit || 10;
-        const includeEmbed = args.include_embed !== false;
+    switch (path) {
+      case '/search_videos': {
+        const query = params.query;
+        const limit = params.limit || 10;
+        const includeEmbed = params.include_embed !== false;
         
         const results = videoDatabase.searchVideos(query, limit);
         const formattedResults = formatVideoResults(results, includeEmbed);
 
         return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                query,
-                count: formattedResults.length,
-                videos: formattedResults
-              }, null, 2),
-            },
-          ],
+          success: true,
+          data: {
+            query,
+            count: formattedResults.length,
+            videos: formattedResults
+          }
         };
       }
 
-      case "get_recent_videos": {
-        const limit = args.limit || 10;
-        const includeEmbed = args.include_embed !== false;
+      case '/get_recent_videos': {
+        const limit = params.limit || 10;
+        const includeEmbed = params.include_embed !== false;
         
         const results = videoDatabase.getRecentVideos(limit);
         const formattedResults = formatVideoResults(results, includeEmbed);
 
         return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                count: formattedResults.length,
-                videos: formattedResults
-              }, null, 2),
-            },
-          ],
+          success: true,
+          data: {
+            count: formattedResults.length,
+            videos: formattedResults
+          }
         };
       }
 
-      case "get_videos_by_category": {
-        const category = args.category;
-        const limit = args.limit || 10;
-        const includeEmbed = args.include_embed !== false;
+      case '/get_videos_by_category': {
+        const category = params.category;
+        const limit = params.limit || 10;
+        const includeEmbed = params.include_embed !== false;
         
         const results = videoDatabase.getVideosByCategory(category, limit);
         const formattedResults = formatVideoResults(results, includeEmbed);
 
         return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                category,
-                count: formattedResults.length,
-                videos: formattedResults
-              }, null, 2),
-            },
-          ],
+          success: true,
+          data: {
+            category,
+            count: formattedResults.length,
+            videos: formattedResults
+          }
         };
       }
 
-      case "get_espn_schedule": {
-        const sport = args.sport || "football";
-        const league = args.league || "college-football";
-        const teamId = args.team_id;
+      case '/get_all_videos': {
+        const includeEmbed = params.include_embed !== false;
+        const results = videoDatabase.getAllVideos();
+        const formattedResults = formatVideoResults(results, includeEmbed);
+
+        return {
+          success: true,
+          data: {
+            count: formattedResults.length,
+            videos: formattedResults
+          }
+        };
+      }
+
+      case '/get_espn_schedule': {
+        const sport = params.sport || "football";
+        const league = params.league || "college-football";
+        const teamId = params.team_id;
         
         const data = await espnHandler.getSchedule(sport, league, teamId);
 
         return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(data, null, 2),
-            },
-          ],
+          success: true,
+          data
         };
       }
 
-      case "get_espn_scores": {
-        const sport = args.sport || "football";
-        const league = args.league || "college-football";
+      case '/get_espn_scores': {
+        const sport = params.sport || "football";
+        const league = params.league || "college-football";
         
         const data = await espnHandler.getScores(sport, league);
 
         return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(data, null, 2),
-            },
-          ],
+          success: true,
+          data
         };
       }
 
-      case "load_video_database": {
-        const videos = args.videos;
+      case '/load_video_database': {
+        const videos = params.videos;
         await videoDatabase.loadVideos(videos);
 
         return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                success: true,
-                message: `Loaded ${videos.length} videos into database`,
-                videosLoaded: videos.length
-              }, null, 2),
-            },
-          ],
+          success: true,
+          data: {
+            message: `Loaded ${videos.length} videos into database`,
+            videosLoaded: videos.length
+          }
         };
       }
 
+      case '/health':
+      case '/':
+        return {
+          success: true,
+          data: {
+            status: 'running',
+            name: 'ESPN Video Server',
+            version: '1.0.0',
+            videosLoaded: videoDatabase.getAllVideos().length,
+            endpoints: [
+              '/search_videos',
+              '/get_recent_videos',
+              '/get_videos_by_category',
+              '/get_all_videos',
+              '/get_espn_schedule',
+              '/get_espn_scores',
+              '/load_video_database',
+              '/health'
+            ]
+          }
+        };
+
       default:
-        throw new Error(`Unknown tool: ${name}`);
+        return {
+          success: false,
+          error: `Unknown endpoint: ${path}`
+        };
     }
   } catch (error) {
     return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({
-            error: error.message,
-            tool: name
-          }, null, 2),
-        },
-      ],
-      isError: true,
+      success: false,
+      error: error.message
     };
+  }
+}
+
+// Create HTTP server
+const PORT = process.env.PORT || 3000;
+const server = http.createServer(async (req, res) => {
+  // Enable CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(200);
+    res.end();
+    return;
+  }
+
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const path = url.pathname;
+
+  if (req.method === 'GET') {
+    // GET requests with query parameters
+    const params = Object.fromEntries(url.searchParams);
+    const result = await handleRequest('GET', path, params);
+    
+    res.writeHead(result.success ? 200 : 400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(result, null, 2));
+  } else if (req.method === 'POST') {
+    // POST requests with JSON body
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const params = JSON.parse(body);
+        const result = await handleRequest('POST', path, params);
+        
+        res.writeHead(result.success ? 200 : 400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result, null, 2));
+      } catch (error) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: 'Invalid JSON body' }));
+      }
+    });
+  } else {
+    res.writeHead(405, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: false, error: 'Method not allowed' }));
   }
 });
 
-// Start server
-async function main() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("ESPN Video MCP Server running on stdio");
-}
+server.listen(PORT, () => {
+  console.log(`ESPN Video Server running on port ${PORT}`);
+  console.log(`Health check: http://localhost:${PORT}/health`);
+  console.log(`\nAvailable endpoints:`);
+  console.log(`  POST /load_video_database - Load videos from JSON`);
+  console.log(`  GET  /search_videos?query=... - Search videos`);
+  console.log(`  GET  /get_recent_videos?limit=10 - Get recent videos`);
+  console.log(`  GET  /get_videos_by_category?category=... - Get by category`);
+  console.log(`  GET  /get_all_videos - Get all videos`);
+  console.log(`  GET  /get_espn_schedule?team_id=201 - Get ESPN schedule`);
+  console.log(`  GET  /get_espn_scores - Get ESPN scores`);
+  console.log(`  GET  /health - Server health check`);
+});
 
-main().catch((error) => {
-  console.error("Fatal error:", error);
-  process.exit(1);
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, closing server...');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
 });
