@@ -1135,10 +1135,29 @@ app.use((error, req, res, next) => {
   console.error('Server error:', error);
   res.status(500).json({ error: 'Internal server error' });
 });
+/**
+ * SELF-PING KEEPALIVE — Prevent Railway from idling the container
+ * Pings the server's own /health endpoint every 30 seconds.
+ * Works on all Railway plans (free or paid).
+ */
+
+const KEEPALIVE_URL = process.env.KEEPALIVE_URL || "http://localhost:" + PORT + "/health";
+
+setInterval(async () => {
+  try {
+    const res = await fetch(KEEPALIVE_URL);
+    const status = await res.text();
+    console.log(`[KEEPALIVE] Ping OK: ${KEEPALIVE_URL}`);
+  } catch (err) {
+    console.log(`[KEEPALIVE] Ping FAILED: ${KEEPALIVE_URL}`);
+  }
+}, 30000);  // every 30 seconds
 
 /**
  * START SERVER
  */
+
+
 app.listen(PORT, () => {
   console.log('='.repeat(60));
   console.log('ESPN MCP SERVER - FULLY INTEGRATED');
