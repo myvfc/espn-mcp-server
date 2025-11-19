@@ -208,23 +208,41 @@ export async function getCurrentGame(teamName, sport = 'football') {
       }
     }
     
-    // If no live game, get most recent completed game
+    // If no live game, get most recent completed game (within last 7 days)
     if (!currentGame) {
+      const sevenDaysAgo = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
+      let recentGames = [];
+      
       for (const event of data.events) {
         const competition = event.competitions?.[0];
         const gameDate = new Date(competition?.date);
         
-        if (gameDate <= now && competition?.status?.type?.completed) {
-          currentGame = event;
-          break;
+        if (gameDate <= now && gameDate >= sevenDaysAgo && competition?.status?.type?.completed) {
+          recentGames.push(event);
         }
+      }
+      
+      // Sort by date descending and take most recent
+      if (recentGames.length > 0) {
+        recentGames.sort((a, b) => {
+          const dateA = new Date(a.competitions[0].date);
+          const dateB = new Date(b.competitions[0].date);
+          return dateB - dateA;
+        });
+        currentGame = recentGames[0];
       }
     }
     
     if (!currentGame) {
+      console.log('No recent or current game found for', teamName);
+      console.log('Total events in schedule:', data.events.length);
+      if (data.events.length > 0) {
+        console.log('First event date:', data.events[0].competitions?.[0]?.date);
+        console.log('First event status:', data.events[0].competitions?.[0]?.status?.type?.description);
+      }
       return {
         error: true,
-        message: `No recent or current game found for ${teamName}`
+        message: `No recent game found for ${teamName} in the last 7 days. The team may be between games or the schedule data may not be updated yet.`
       };
     }
     
@@ -478,4 +496,3 @@ export function clearCache() {
   cache.clear();
   console.log('ESPN cache cleared');
 }
-
