@@ -304,13 +304,13 @@ export async function getCurrentGame(teamName, sport = 'football') {
         homeTeam: {
           name: homeTeam.team.displayName,
           abbreviation: homeTeam.team.abbreviation,
-          score: homeTeam.score,
+          score: homeTeam.score?.value || homeTeam.score?.displayValue || homeTeam.score || 0,
           record: homeTeam.records?.[0]?.summary
         },
         awayTeam: {
           name: awayTeam.team.displayName,
           abbreviation: awayTeam.team.abbreviation,
-          score: awayTeam.score,
+          score: awayTeam.score?.value || awayTeam.score?.displayValue || awayTeam.score || 0,
           record: awayTeam.records?.[0]?.summary
         },
         venue: competition.venue?.fullName,
