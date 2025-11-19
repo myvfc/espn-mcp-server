@@ -894,24 +894,34 @@ app.use((error, req, res, next) => {
 });
 
 /**
- * START SERVER (Railway-safe)
+ * START SERVER (Railway-Safe)
  */
 const PORT = process.env.PORT || 8080;
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log("=".repeat(60));
+  console.log(`✔ Server started and listening on 0.0.0.0:${PORT}`);
+  console.log("=".repeat(60));
+
   console.log("ESPN MCP SERVER - FULLY INTEGRATED");
   console.log("=".repeat(60));
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/health`);
-  console.log(`MCP endpoint: http://localhost:${PORT}/mcp (POST with Bearer token)`);
+
+  console.log(`Health check endpoint is active.`);
+  console.log(`MCP endpoint is active (POST to /mcp with Bearer token).`);
+
   console.log("=".repeat(60));
   console.log("Data Sources:");
   console.log("  ✓ ESPN API (scores, schedules, rankings)");
-  console.log(`  ${process.env.CFBD_API_KEY ? "✓" : "✗"} CFBD API (analytics, recruiting, betting, traditional stats)`);
+  console.log(
+    `  ${process.env.CFBD_API_KEY ? "✓" : "✗"} CFBD API (analytics, recruiting, betting, traditional stats)`
+  );
   console.log("  ✓ NCAA API (multi-division coverage)");
   console.log("=".repeat(60));
+
+  console.log(`Startup time: ${new Date().toISOString()}`);
+  console.log("=".repeat(60));
 });
+
 
   
   if (!process.env.CFBD_API_KEY) {
