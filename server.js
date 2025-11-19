@@ -894,28 +894,25 @@ app.use((error, req, res, next) => {
 });
 
 /**
- * START SERVER
+ * START SERVER (Railway-safe)
  */
-app.listen(PORT, () => {
-  console.log('='.repeat(60));
-  console.log('ESPN MCP SERVER - FULLY INTEGRATED');
-  console.log('='.repeat(60));
+const PORT = process.env.PORT || 8080;
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log("=".repeat(60));
+  console.log("ESPN MCP SERVER - FULLY INTEGRATED");
+  console.log("=".repeat(60));
   console.log(`Server running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
   console.log(`MCP endpoint: http://localhost:${PORT}/mcp (POST with Bearer token)`);
-  console.log('='.repeat(60));
-  console.log('Data Sources:');
-  console.log('  ✓ ESPN API (scores, schedules, rankings)');
-  console.log(`  ${process.env.CFBD_API_KEY ? '✓' : '✗'} CFBD API (analytics, recruiting, betting, traditional stats)`);
-  console.log('  ✓ NCAA API (multi-division coverage)');
-  console.log('='.repeat(60));
-  console.log('13 Tools Available:');
-  console.log('  ESPN: get_score, get_schedule, get_scoreboard, get_rankings');
-  console.log('  CFBD: get_stats, get_recruiting, get_talent, get_betting, get_ratings, get_records');
-  console.log('  NCAA: get_ncaa_scoreboard, get_ncaa_rankings');
-  console.log('='.repeat(60));
-  console.log(`Started at: ${new Date().toISOString()}`);
-  console.log('='.repeat(60));
+  console.log("=".repeat(60));
+  console.log("Data Sources:");
+  console.log("  ✓ ESPN API (scores, schedules, rankings)");
+  console.log(`  ${process.env.CFBD_API_KEY ? "✓" : "✗"} CFBD API (analytics, recruiting, betting, traditional stats)`);
+  console.log("  ✓ NCAA API (multi-division coverage)");
+  console.log("=".repeat(60));
+});
+
   
   if (!process.env.CFBD_API_KEY) {
     console.log('\n⚠️  WARNING: CFBD_API_KEY not set!');
