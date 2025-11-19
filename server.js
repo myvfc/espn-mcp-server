@@ -1,3 +1,4 @@
+
 /**
  * ESPN MCP SERVER - COMPLETE WITH ALL API INTEGRATIONS
  * Multi-source sports data API combining ESPN, CFBD, and NCAA
@@ -560,8 +561,8 @@ async function handleGetScore(args) {
     text += `\n`;
   }
   
-  text += `\n${game.awayTeam.name} (${game.awayTeam.record}): ${game.awayTeam.score}`;
-  text += `\n${game.homeTeam.name} (${game.homeTeam.record}): ${game.homeTeam.score}`;
+  text += `\n${game.awayTeam.name} (${game.awayTeam.record}): ${game.awayTeam.score?.displayValue || game.awayTeam.score?.value || game.awayTeam.score}`;
+  text += `\n${game.homeTeam.name} (${game.homeTeam.record}): ${game.homeTeam.score?.displayValue || game.homeTeam.score?.value || game.homeTeam.score}`;
   
   if (game.venue) {
     text += `\n\nVenue: ${game.venue}`;
