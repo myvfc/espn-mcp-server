@@ -893,10 +893,22 @@ app.use((error, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
+/**
+ * WARN IF CFBD API KEY IS MISSING
+ */
+if (!process.env.CFBD_API_KEY) {
+  console.log('\n⚠️  WARNING: CFBD_API_KEY not set!');
+  console.log('CFBD tools will not work without an API key.');
+  console.log('Get free key at: https://collegefootballdata.com\n');
+}
+
+/**
+ * START SERVER (Railway Safe)
+ */
 app.listen(PORT, "0.0.0.0", () => {
   console.log("=".repeat(60));
   console.log(`✔ Server started and listening on 0.0.0.0:${PORT}`);
-  console.log("=".peat(60));
+  console.log("=".repeat(60));
 
   console.log("ESPN MCP SERVER - FULLY INTEGRATED");
   console.log("=".repeat(60));
@@ -915,15 +927,5 @@ app.listen(PORT, "0.0.0.0", () => {
 
   console.log(`Startup time: ${new Date().toISOString()}`);
   console.log("=".repeat(60));
-});
-
-
-
-  
-  if (!process.env.CFBD_API_KEY) {
-    console.log('\n⚠️  WARNING: CFBD_API_KEY not set!');
-    console.log('CFBD tools will not work without an API key.');
-    console.log('Get free key at: https://collegefootballdata.com\n');
-  }
 });
 
