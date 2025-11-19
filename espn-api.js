@@ -279,12 +279,20 @@ export async function getCurrentGame(teamName, sport = 'football') {
       };
     }
     
+    console.log('Extracting score data from game:', currentGame.name);
     const competition = currentGame.competitions[0];
+    console.log('Competition data exists:', !!competition);
+    console.log('Competitors count:', competition?.competitors?.length);
+    
     const homeTeam = competition.competitors.find(t => t.homeAway === 'home');
     const awayTeam = competition.competitors.find(t => t.homeAway === 'away');
-    const status = competition.status;
+    console.log('Home team found:', homeTeam?.team?.displayName);
+    console.log('Away team found:', awayTeam?.team?.displayName);
     
-    return {
+    const status = competition.status;
+    console.log('Status:', status?.type?.description);
+    
+    const gameResult = {
       game: {
         name: currentGame.name,
         date: competition.date,
@@ -309,6 +317,9 @@ export async function getCurrentGame(teamName, sport = 'football') {
         broadcast: competition.broadcasts?.[0]?.names?.[0]
       }
     };
+    
+    console.log('Returning game result:', JSON.stringify(gameResult, null, 2));
+    return gameResult;
     
   } catch (error) {
     return {
