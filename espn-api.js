@@ -1,337 +1,481 @@
 /**
  * ESPN API INTEGRATION
- * Fetches real-time sports data from ESPN's public APIs
+ * Real-time scores, schedules, rankings from ESPN
+ * No API key required - public endpoints
  */
 
 import fetch from 'node-fetch';
-import { getTeamId, getSportPath } from './team-mapping.js';
 
-const ESPN_BASE_URL = 'http://site.api.espn.com/apis/site/v2/sports';
+const ESPN_BASE_URL = 'https://site.api.espn.com/apis/site/v2/sports';
 
-// ADAPTIVE CACHE DURATIONS - Optimized for real-time performance
-const CACHE_DURATIONS = {
-  LIVE_GAME: 1 * 60 * 1000,              // 1 minute for live games (MAXIMUM REAL-TIME)
-  COMPLETED_GAME: 24 * 60 * 60 * 1000,  // 24 hours for completed games (scores never change)
-  UPCOMING_GAME: 6 * 60 * 60 * 1000,    // 6 hours for upcoming games (schedules rarely change)
-  SCHEDULE: 24 * 60 * 60 * 1000,        // 24 hours for full schedules
-  SCOREBOARD: 1 * 60 * 1000,            // 1 minute for scoreboards (when live games detected)
-  SCOREBOARD_NO_LIVE: 15 * 60 * 1000,   // 15 minutes when no live games
-  RANKINGS: 24 * 60 * 60 * 1000         // 24 hours for rankings (update weekly)
+// Team name to ESPN ID mapping for major college teams
+const TEAM_MAP = {
+  // Big 12
+  'oklahoma': '201',
+  'ou': '201',
+  'sooners': '201',
+  'texas': '251',
+  'ut': '251',
+  'longhorns': '251',
+  'oklahoma state': '197',
+  'osu': '197',
+  'cowboys': '197',
+  'baylor': '239',
+  'tcu': '2628',
+  'texas tech': '2641',
+  'kansas': '2305',
+  'kansas state': '2306',
+  'iowa state': '66',
+  'west virginia': '277',
+  
+  // SEC
+  'alabama': '333',
+  'bama': '333',
+  'georgia': '61',
+  'uga': '61',
+  'lsu': '99',
+  'florida': '57',
+  'tennessee': '2633',
+  'auburn': '2',
+  'texas a&m': '245',
+  'tamu': '245',
+  'arkansas': '8',
+  'missouri': '142',
+  'kentucky': '96',
+  'mississippi state': '344',
+  'ole miss': '145',
+  'south carolina': '2579',
+  'vanderbilt': '238',
+  
+  // Big Ten
+  'ohio state': '194',
+  'osu': '194',
+  'michigan': '130',
+  'penn state': '213',
+  'wisconsin': '275',
+  'iowa': '2294',
+  'nebraska': '158',
+  'minnesota': '135',
+  'northwestern': '77',
+  'illinois': '356',
+  'purdue': '2509',
+  'indiana': '84',
+  'michigan state': '127',
+  'maryland': '120',
+  'rutgers': '164',
+  
+  // ACC
+  'clemson': '228',
+  'miami': '2390',
+  'florida state': '52',
+  'fsu': '52',
+  'north carolina': '153',
+  'unc': '153',
+  'nc state': '152',
+  'virginia tech': '259',
+  'virginia': '258',
+  'pittsburgh': '221',
+  'louisville': '97',
+  'duke': '150',
+  'wake forest': '154',
+  'boston college': '103',
+  'syracuse': '183',
+  'georgia tech': '59',
+  
+  // Pac-12 / Other
+  'usc': '30',
+  'ucla': '26',
+  'oregon': '2483',
+  'washington': '264',
+  'stanford': '24',
+  'notre dame': '87',
+  'byu': '252',
+  'utah': '254',
+  'colorado': '38',
+  'arizona': '12',
+  'arizona state': '9',
+  'washington state': '265',
+  'oregon state': '204',
+  'california': '25',
+  'cal': '25'
+};
+
+// Cache configuration
+const CACHE_DURATION = {
+  LIVE_GAME: 60 * 1000,           // 1 minute for live games
+  COMPLETED_GAME: 24 * 60 * 60 * 1000,  // 24 hours for completed
+  SCHEDULE: 24 * 60 * 60 * 1000,  // 24 hours
+  RANKINGS: 24 * 60 * 60 * 1000,  // 24 hours
+  SCOREBOARD: 5 * 60 * 1000       // 5 minutes
 };
 
 const cache = new Map();
 
 /**
- * Fetch data with adaptive caching
- * Cache duration is determined by data type (live games get shorter cache)
+ * Get team ESPN ID from name
  */
-async function fetchWithCache(url, cacheKey, cacheDuration) {
-  const cached = cache.get(cacheKey);
+function getTeamId(teamName) {
+  const normalized = teamName.toLowerCase().trim();
+  return TEAM_MAP[normalized] || null;
+}
+
+/**
+ * Fetch from ESPN API with error handling
+ */
+async function fetchESPN(url) {
+  console.log(`Fetching ESPN: ${url}`);
   
-  if (cached && Date.now() - cached.timestamp < cacheDuration) {
-    console.log(`Cache hit: ${cacheKey} (age: ${Math.floor((Date.now() - cached.timestamp) / 1000)}s)`);
-    return cached.data;
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Botosphere-MCP-Server/1.0'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`ESPN API error: ${response.status} ${response.statusText}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('ESPN fetch error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Cache helper with TTL
+ */
+function getCached(key, maxAge) {
+  const cached = cache.get(key);
+  if (!cached) return null;
+  
+  const age = Date.now() - cached.timestamp;
+  if (age > maxAge) {
+    cache.delete(key);
+    return null;
   }
   
-  console.log(`Fetching from ESPN: ${url}`);
-  const response = await fetch(url);
-  
-  if (!response.ok) {
-    throw new Error(`ESPN API error: ${response.status} ${response.statusText}`);
-  }
-  
-  const data = await response.json();
-  
-  cache.set(cacheKey, {
+  console.log(`Cache hit: ${key} (age: ${Math.floor(age / 1000)}s)`);
+  return cached.data;
+}
+
+function setCache(key, data) {
+  cache.set(key, {
     data,
     timestamp: Date.now()
   });
-  
-  console.log(`Cached: ${cacheKey} (duration: ${cacheDuration / 1000}s)`);
-  
-  return data;
 }
 
 /**
- * Get team schedule (includes scores for completed games)
- */
-export async function getTeamSchedule(teamName, sport = 'football') {
-  const teamId = getTeamId(teamName);
-  
-  if (!teamId) {
-    throw new Error(`Team not found: ${teamName}`);
-  }
-  
-  const sportConfig = getSportPath(sport);
-  const url = `${ESPN_BASE_URL}/${sportConfig.path}/teams/${teamId}/schedule`;
-  const cacheKey = `schedule-${teamId}-${sport}`;
-  
-  const data = await fetchWithCache(url, cacheKey, CACHE_DURATIONS.SCHEDULE);
-  
-  return {
-    team: data.team,
-    events: data.events || [],
-    sport: sportConfig.name
-  };
-}
-
-/**
- * Get most recent or current game with ADAPTIVE CACHING
- * Live games = 1 minute cache
- * Completed games = 24 hour cache
- * Upcoming games = 6 hour cache
+ * Get current or most recent game score for a team
  */
 export async function getCurrentGame(teamName, sport = 'football') {
   const teamId = getTeamId(teamName);
   
   if (!teamId) {
-    throw new Error(`Team not found: ${teamName}`);
+    return {
+      error: true,
+      message: `Team "${teamName}" not found. Try: oklahoma, texas, alabama, ohio state, etc.`
+    };
   }
   
-  const sportConfig = getSportPath(sport);
-  const url = `${ESPN_BASE_URL}/${sportConfig.path}/teams/${teamId}/schedule`;
-  
-  // First, check if we have a cached game and determine its state
-  const cacheKey = `current-game-${teamId}-${sport}`;
-  const cached = cache.get(cacheKey);
-  
-  // Determine cache duration based on game state
-  let cacheDuration = CACHE_DURATIONS.UPCOMING_GAME; // Default
-  
-  if (cached && cached.data) {
-    const cachedGame = cached.data;
-    const gameState = cachedGame.status?.state;
+  try {
+    const sportPath = sport === 'football' ? 'football/college-football' : 
+                      sport === 'basketball' ? 'basketball/mens-college-basketball' :
+                      'football/college-football';
     
-    if (gameState === 'in') {
-      // Live game - use 1 minute cache
-      cacheDuration = CACHE_DURATIONS.LIVE_GAME;
-    } else if (gameState === 'post') {
-      // Completed game - use 24 hour cache
-      cacheDuration = CACHE_DURATIONS.COMPLETED_GAME;
-    } else {
-      // Upcoming game - use 6 hour cache
-      cacheDuration = CACHE_DURATIONS.UPCOMING_GAME;
+    const url = `${ESPN_BASE_URL}/${sportPath}/teams/${teamId}/schedule`;
+    const data = await fetchESPN(url);
+    
+    if (!data.events || data.events.length === 0) {
+      return {
+        error: true,
+        message: `No games found for ${teamName}`
+      };
     }
     
-    // Check if cache is still valid
-    if (Date.now() - cached.timestamp < cacheDuration) {
-      console.log(`Current game cache hit: ${cacheKey} (state: ${gameState}, age: ${Math.floor((Date.now() - cached.timestamp) / 1000)}s)`);
-      return cachedGame;
+    // Find most recent or current game
+    const now = new Date();
+    let currentGame = null;
+    
+    // First, look for in-progress game
+    for (const event of data.events) {
+      const competition = event.competitions?.[0];
+      if (competition?.status?.type?.state === 'in') {
+        currentGame = event;
+        break;
+      }
     }
+    
+    // If no live game, get most recent completed game
+    if (!currentGame) {
+      for (const event of data.events) {
+        const competition = event.competitions?.[0];
+        const gameDate = new Date(competition?.date);
+        
+        if (gameDate <= now && competition?.status?.type?.completed) {
+          currentGame = event;
+          break;
+        }
+      }
+    }
+    
+    if (!currentGame) {
+      return {
+        error: true,
+        message: `No recent or current game found for ${teamName}`
+      };
+    }
+    
+    const competition = currentGame.competitions[0];
+    const homeTeam = competition.competitors.find(t => t.homeAway === 'home');
+    const awayTeam = competition.competitors.find(t => t.homeAway === 'away');
+    const status = competition.status;
+    
+    return {
+      game: {
+        name: currentGame.name,
+        date: competition.date,
+        status: status.type.description,
+        period: status.period,
+        clock: status.displayClock,
+        isLive: status.type.state === 'in',
+        isCompleted: status.type.completed,
+        homeTeam: {
+          name: homeTeam.team.displayName,
+          abbreviation: homeTeam.team.abbreviation,
+          score: homeTeam.score,
+          record: homeTeam.records?.[0]?.summary
+        },
+        awayTeam: {
+          name: awayTeam.team.displayName,
+          abbreviation: awayTeam.team.abbreviation,
+          score: awayTeam.score,
+          record: awayTeam.records?.[0]?.summary
+        },
+        venue: competition.venue?.fullName,
+        broadcast: competition.broadcasts?.[0]?.names?.[0]
+      }
+    };
+    
+  } catch (error) {
+    return {
+      error: true,
+      message: `Failed to get game data: ${error.message}`
+    };
   }
-  
-  // Cache expired or doesn't exist - fetch fresh data
-  console.log(`Fetching fresh schedule for current game: ${teamName}`);
-  const scheduleData = await fetchWithCache(url, `schedule-${teamId}-${sport}`, CACHE_DURATIONS.SCHEDULE);
-  const schedule = {
-    team: scheduleData.team,
-    events: scheduleData.events || [],
-    sport: sportConfig.name
-  };
-  
-  if (!schedule.events || schedule.events.length === 0) {
-    return null;
-  }
-  
-  // Find in-progress game (highest priority)
-  const liveGame = schedule.events.find(event => 
-    event.status?.type?.state === 'in'
-  );
-  
-  if (liveGame) {
-    const parsedGame = parseGameData(liveGame);
-    console.log(`Found LIVE game - caching for ${CACHE_DURATIONS.LIVE_GAME / 1000}s`);
-    cache.set(cacheKey, {
-      data: parsedGame,
-      timestamp: Date.now()
-    });
-    return parsedGame;
-  }
-  
-  // Find most recent completed game
-  const completedGames = schedule.events.filter(event => 
-    event.status?.type?.state === 'post'
-  );
-  
-  if (completedGames.length > 0) {
-    const parsedGame = parseGameData(completedGames[0]);
-    console.log(`Found COMPLETED game - caching for ${CACHE_DURATIONS.COMPLETED_GAME / 1000}s`);
-    cache.set(cacheKey, {
-      data: parsedGame,
-      timestamp: Date.now()
-    });
-    return parsedGame;
-  }
-  
-  // Return next upcoming game
-  const upcomingGames = schedule.events.filter(event => 
-    event.status?.type?.state === 'pre'
-  );
-  
-  if (upcomingGames.length > 0) {
-    const parsedGame = parseGameData(upcomingGames[0]);
-    console.log(`Found UPCOMING game - caching for ${CACHE_DURATIONS.UPCOMING_GAME / 1000}s`);
-    cache.set(cacheKey, {
-      data: parsedGame,
-      timestamp: Date.now()
-    });
-    return parsedGame;
-  }
-  
-  return null;
 }
 
 /**
- * Get today's scoreboard across all teams with INTELLIGENT CACHING
- * Detects if any games are live and adjusts cache accordingly
+ * Get team schedule
+ */
+export async function getTeamSchedule(teamName, sport = 'football', limit = 5) {
+  const teamId = getTeamId(teamName);
+  
+  if (!teamId) {
+    return {
+      error: true,
+      message: `Team "${teamName}" not found`
+    };
+  }
+  
+  const cacheKey = `schedule_${teamId}_${sport}`;
+  const cached = getCached(cacheKey, CACHE_DURATION.SCHEDULE);
+  if (cached) return cached;
+  
+  try {
+    const sportPath = sport === 'football' ? 'football/college-football' : 
+                      sport === 'basketball' ? 'basketball/mens-college-basketball' :
+                      'football/college-football';
+    
+    const url = `${ESPN_BASE_URL}/${sportPath}/teams/${teamId}/schedule`;
+    const data = await fetchESPN(url);
+    
+    if (!data.events || data.events.length === 0) {
+      return {
+        error: true,
+        message: `No schedule found for ${teamName}`
+      };
+    }
+    
+    const now = new Date();
+    const upcomingGames = data.events
+      .filter(event => {
+        const gameDate = new Date(event.competitions?.[0]?.date);
+        return gameDate >= now;
+      })
+      .slice(0, limit)
+      .map(event => {
+        const competition = event.competitions[0];
+        const homeTeam = competition.competitors.find(t => t.homeAway === 'home');
+        const awayTeam = competition.competitors.find(t => t.homeAway === 'away');
+        
+        return {
+          date: competition.date,
+          opponent: homeTeam.team.id === teamId ? awayTeam.team.displayName : homeTeam.team.displayName,
+          location: homeTeam.team.id === teamId ? 'Home' : 'Away',
+          venue: competition.venue?.fullName,
+          broadcast: competition.broadcasts?.[0]?.names?.[0],
+          time: new Date(competition.date).toLocaleString('en-US', {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            timeZoneName: 'short'
+          })
+        };
+      });
+    
+    const result = {
+      team: teamName,
+      games: upcomingGames
+    };
+    
+    setCache(cacheKey, result);
+    return result;
+    
+  } catch (error) {
+    return {
+      error: true,
+      message: `Failed to get schedule: ${error.message}`
+    };
+  }
+}
+
+/**
+ * Get scoreboard for all games today
  */
 export async function getScoreboard(sport = 'football', date = null) {
-  const sportConfig = getSportPath(sport);
-  let url = `${ESPN_BASE_URL}/${sportConfig.path}/scoreboard`;
+  const dateStr = date || new Date().toISOString().split('T')[0].replace(/-/g, '');
+  const cacheKey = `scoreboard_${sport}_${dateStr}`;
+  const cached = getCached(cacheKey, CACHE_DURATION.SCOREBOARD);
+  if (cached) return cached;
   
-  if (date) {
-    url += `?dates=${date}`; // Format: YYYYMMDD
-  }
-  
-  const cacheKey = `scoreboard-${sport}-${date || 'today'}`;
-  const cached = cache.get(cacheKey);
-  
-  // Check if we have cached data with live games
-  let cacheDuration = CACHE_DURATIONS.SCOREBOARD_NO_LIVE;
-  
-  if (cached && cached.data) {
-    const hasLiveGames = cached.data.events?.some(event => 
-      event.status?.state === 'in'
-    );
+  try {
+    const sportPath = sport === 'football' ? 'football/college-football' : 
+                      sport === 'basketball' ? 'basketball/mens-college-basketball' :
+                      'football/college-football';
     
-    if (hasLiveGames) {
-      // Live games exist - use 1 minute cache for maximum real-time
-      cacheDuration = CACHE_DURATIONS.SCOREBOARD;
-      console.log(`Scoreboard has LIVE games - using ${cacheDuration / 1000}s cache`);
-    } else {
-      // No live games - use longer cache
-      console.log(`Scoreboard has no live games - using ${cacheDuration / 1000}s cache`);
+    const url = `${ESPN_BASE_URL}/${sportPath}/scoreboard?dates=${dateStr}`;
+    const data = await fetchESPN(url);
+    
+    if (!data.events || data.events.length === 0) {
+      return {
+        error: true,
+        message: `No games found for ${dateStr}`
+      };
     }
     
-    if (Date.now() - cached.timestamp < cacheDuration) {
-      console.log(`Scoreboard cache hit: ${cacheKey} (age: ${Math.floor((Date.now() - cached.timestamp) / 1000)}s)`);
-      return cached.data;
+    const games = data.events.map(event => {
+      const competition = event.competitions[0];
+      const homeTeam = competition.competitors.find(t => t.homeAway === 'home');
+      const awayTeam = competition.competitors.find(t => t.homeAway === 'away');
+      const status = competition.status;
+      
+      return {
+        name: event.name,
+        status: status.type.description,
+        isLive: status.type.state === 'in',
+        period: status.period,
+        clock: status.displayClock,
+        homeTeam: {
+          name: homeTeam.team.displayName,
+          abbreviation: homeTeam.team.abbreviation,
+          score: homeTeam.score,
+          record: homeTeam.records?.[0]?.summary
+        },
+        awayTeam: {
+          name: awayTeam.team.displayName,
+          abbreviation: awayTeam.team.abbreviation,
+          score: awayTeam.score,
+          record: awayTeam.records?.[0]?.summary
+        },
+        broadcast: competition.broadcasts?.[0]?.names?.[0]
+      };
+    });
+    
+    const result = {
+      date: dateStr,
+      games
+    };
+    
+    setCache(cacheKey, result);
+    return result;
+    
+  } catch (error) {
+    return {
+      error: true,
+      message: `Failed to get scoreboard: ${error.message}`
+    };
+  }
+}
+
+/**
+ * Get rankings (AP Top 25)
+ */
+export async function getRankings(sport = 'football', poll = 'ap') {
+  const cacheKey = `rankings_${sport}_${poll}`;
+  const cached = getCached(cacheKey, CACHE_DURATION.RANKINGS);
+  if (cached) return cached;
+  
+  try {
+    const sportPath = sport === 'football' ? 'football/college-football' : 
+                      sport === 'basketball' ? 'basketball/mens-college-basketball' :
+                      'football/college-football';
+    
+    const url = `${ESPN_BASE_URL}/${sportPath}/rankings`;
+    const data = await fetchESPN(url);
+    
+    if (!data.rankings || data.rankings.length === 0) {
+      return {
+        error: true,
+        message: 'No rankings available'
+      };
     }
+    
+    // Find the requested poll (default to first available)
+    let ranking = data.rankings[0];
+    if (poll !== 'ap') {
+      const found = data.rankings.find(r => 
+        r.name.toLowerCase().includes(poll.toLowerCase())
+      );
+      if (found) ranking = found;
+    }
+    
+    const teams = ranking.ranks.map(rank => ({
+      rank: rank.current,
+      previousRank: rank.previous,
+      team: rank.team.displayName,
+      abbreviation: rank.team.abbreviation,
+      record: rank.recordSummary,
+      points: rank.points
+    }));
+    
+    const result = {
+      poll: ranking.name,
+      week: ranking.week,
+      season: ranking.season,
+      teams
+    };
+    
+    setCache(cacheKey, result);
+    return result;
+    
+  } catch (error) {
+    return {
+      error: true,
+      message: `Failed to get rankings: ${error.message}`
+    };
   }
-  
-  // Fetch fresh data
-  console.log(`Fetching fresh scoreboard data`);
-  const data = await fetchWithCache(url, cacheKey, CACHE_DURATIONS.SCOREBOARD);
-  
-  const scoreboard = {
-    events: (data.events || []).map(parseGameData),
-    sport: sportConfig.name
-  };
-  
-  // Check if any games are live and adjust future cache duration
-  const hasLiveGames = scoreboard.events.some(event => 
-    event.status?.state === 'in'
-  );
-  
-  if (hasLiveGames) {
-    console.log(`Scoreboard contains ${scoreboard.events.filter(e => e.status?.state === 'in').length} LIVE games`);
-  }
-  
-  return scoreboard;
 }
 
 /**
- * Get rankings (AP Top 25, Coaches Poll)
- */
-export async function getRankings(sport = 'football') {
-  const sportConfig = getSportPath(sport);
-  const url = `${ESPN_BASE_URL}/${sportConfig.path}/rankings`;
-  const cacheKey = `rankings-${sport}`;
-  
-  const data = await fetchWithCache(url, cacheKey, CACHE_DURATIONS.RANKINGS);
-  
-  if (!data.rankings || data.rankings.length === 0) {
-    return null;
-  }
-  
-  return {
-    rankings: data.rankings.map(ranking => ({
-      name: ranking.name,
-      type: ranking.type,
-      teams: ranking.ranks?.map(rank => ({
-        rank: rank.current,
-        team: rank.team?.displayName || rank.team?.name,
-        record: rank.recordSummary,
-        points: rank.points
-      })) || []
-    })),
-    sport: sportConfig.name
-  };
-}
-
-/**
- * Parse game data into consistent format
- */
-function parseGameData(event) {
-  const competition = event.competitions?.[0];
-  const status = event.status;
-  
-  const homeTeam = competition?.competitors?.find(c => c.homeAway === 'home');
-  const awayTeam = competition?.competitors?.find(c => c.homeAway === 'away');
-  
-  return {
-    id: event.id,
-    name: event.name,
-    shortName: event.shortName,
-    date: event.date,
-    
-    status: {
-      state: status?.type?.state, // 'pre', 'in', 'post'
-      detail: status?.type?.detail,
-      completed: status?.type?.completed,
-      period: status?.period,
-      clock: status?.displayClock
-    },
-    
-    homeTeam: {
-      id: homeTeam?.id,
-      name: homeTeam?.team?.displayName,
-      abbreviation: homeTeam?.team?.abbreviation,
-      logo: homeTeam?.team?.logo,
-      score: homeTeam?.score,
-      record: homeTeam?.records?.[0]?.summary,
-      rank: homeTeam?.curatedRank?.current
-    },
-    
-    awayTeam: {
-      id: awayTeam?.id,
-      name: awayTeam?.team?.displayName,
-      abbreviation: awayTeam?.team?.abbreviation,
-      logo: awayTeam?.team?.logo,
-      score: awayTeam?.score,
-      record: awayTeam?.records?.[0]?.summary,
-      rank: awayTeam?.curatedRank?.current
-    },
-    
-    venue: {
-      name: competition?.venue?.fullName,
-      city: competition?.venue?.address?.city,
-      state: competition?.venue?.address?.state
-    },
-    
-    broadcast: competition?.broadcasts?.[0]?.names?.[0] || null,
-    
-    odds: competition?.odds?.[0] ? {
-      spread: competition.odds[0].details,
-      overUnder: competition.odds[0].overUnder
-    } : null
-  };
-}
-
-/**
- * Clear cache (useful for testing)
+ * Clear ESPN cache
  */
 export function clearCache() {
   cache.clear();
-  console.log('Cache cleared');
+  console.log('ESPN cache cleared');
 }
+
