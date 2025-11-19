@@ -4,22 +4,29 @@ import axios from "axios";
 async function getTraditionalStats(team, year) {
   const base = "https://api.collegefootballdata.com";
 
+  const headers = {
+    Authorization: `Bearer ${process.env.CFBD_API_KEY}`,
+  };
+
   try {
     // ---- 1. SEASON TEAM STATS ----
     const seasonRes = await axios.get(`${base}/stats/season`, {
-      params: { year, team }
+      params: { year, team },
+      headers
     });
     const seasonStats = seasonRes.data || [];
 
     // ---- 2. TEAM GAME-BY-GAME STATS ----
     const teamGamesRes = await axios.get(`${base}/games/teams`, {
-      params: { year, team }
+      params: { year, team },
+      headers
     });
     const teamGameStats = teamGamesRes.data || [];
 
     // ---- 3. PLAYER GAME-BY-GAME STATS ----
     const playerGamesRes = await axios.get(`${base}/games/players`, {
-      params: { year, team }
+      params: { year, team },
+      headers
     });
     const playerGameStats = playerGamesRes.data || [];
 
@@ -34,12 +41,8 @@ async function getTraditionalStats(team, year) {
 
         for (const player of t.players) {
           const name = player.name;
-
           if (!seasonPlayerTotals[name]) {
-            seasonPlayerTotals[name] = {
-              name,
-              categories: {}
-            };
+            seasonPlayerTotals[name] = { name, categories: {} };
           }
 
           for (const stat of player.stats) {
@@ -61,7 +64,6 @@ async function getTraditionalStats(team, year) {
       }
     }
 
-    // ---- COMBINE EVERYTHING INTO ONE RETURN ----
     return {
       team,
       year,
@@ -72,9 +74,10 @@ async function getTraditionalStats(team, year) {
     };
 
   } catch (err) {
-    console.error("Error fetching traditional stats:", err.response?.data || err);
+    console.error("CFBD Traditional Stats Error:", err.response?.data || err);
     throw new Error("Failed to fetch traditional stats");
   }
 }
 
 export { getTraditionalStats };
+
