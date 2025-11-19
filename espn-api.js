@@ -132,13 +132,20 @@ async function fetchESPN(url) {
       }
     });
     
+    console.log(`ESPN Response Status: ${response.status} ${response.statusText}`);
+    
     if (!response.ok) {
+      console.error(`ESPN API returned error status: ${response.status}`);
       throw new Error(`ESPN API error: ${response.status} ${response.statusText}`);
     }
     
-    return await response.json();
+    const data = await response.json();
+    console.log(`ESPN Data received, events count: ${data.events?.length || 0}`);
+    
+    return data;
   } catch (error) {
-    console.error('ESPN fetch error:', error);
+    console.error('ESPN fetch error:', error.message);
+    console.error('Error stack:', error.stack);
     throw error;
   }
 }
@@ -171,14 +178,19 @@ function setCache(key, data) {
  * Get current or most recent game score for a team
  */
 export async function getCurrentGame(teamName, sport = 'football') {
+  console.log(`getCurrentGame called for: ${teamName}, sport: ${sport}`);
+  
   const teamId = getTeamId(teamName);
   
   if (!teamId) {
+    console.log(`Team not found: ${teamName}`);
     return {
       error: true,
       message: `Team "${teamName}" not found. Try: oklahoma, texas, alabama, ohio state, etc.`
     };
   }
+  
+  console.log(`Team ID found: ${teamId} for ${teamName}`);
   
   try {
     const sportPath = sport === 'football' ? 'football/college-football' : 
