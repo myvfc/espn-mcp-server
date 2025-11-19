@@ -5,6 +5,7 @@
  * Created for The Botosphere - Boomer Bot
  */
 
+import { getGamePlayerStats } from "./espn-player.js";
 import express from 'express';
 import cors from 'cors';
 import {
