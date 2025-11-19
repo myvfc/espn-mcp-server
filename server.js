@@ -893,15 +893,10 @@ app.use((error, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-/**
- * START SERVER (Railway-Safe)
- */
-const PORT = process.env.PORT || 8080;
-
 app.listen(PORT, "0.0.0.0", () => {
   console.log("=".repeat(60));
   console.log(`✔ Server started and listening on 0.0.0.0:${PORT}`);
-  console.log("=".repeat(60));
+  console.log("=".peat(60));
 
   console.log("ESPN MCP SERVER - FULLY INTEGRATED");
   console.log("=".repeat(60));
@@ -921,6 +916,7 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`Startup time: ${new Date().toISOString()}`);
   console.log("=".repeat(60));
 });
+
 
 
   
