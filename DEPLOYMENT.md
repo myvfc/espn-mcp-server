@@ -1,228 +1,182 @@
-# Deployment Guide
+# ESPN MCP SERVER - DEPLOYMENT GUIDE
 
-Complete guide for deploying ESPN MCP Server to Railway.
+## 🚀 Quick Deploy to Railway
 
-## Prerequisites
+### Step 1: Upload Files to GitHub
 
-- GitHub account
-- Railway account (free tier available)
-- Code pushed to GitHub repository
+Upload these 5 files to your GitHub repository:
 
-## Deployment Steps
+1. **server.js** - Main MCP server
+2. **espn-api.js** - ESPN integration
+3. **cfbd-api.js** - CFBD integration  
+4. **ncaa-api.js** - NCAA integration
+5. **package.json** - Dependencies
 
-### Step 1: Prepare Repository
+### Step 2: Configure Railway Environment Variables
 
-Ensure your repo has these files:
-- ✅ `package.json`
-- ✅ `Dockerfile`
-- ✅ `.gitignore`
-- ✅ All JavaScript files
-```bash
-# Verify all files are committed
-git status
+In Railway, add these environment variables:
 
-# If you have changes, commit them
-git add .
-git commit -m "Ready for deployment"
-git push origin main
+**Required:**
+- `MCP_API_KEY` = `sk_live_boomerbot_a8f7d2e9c4b1x6m3n5p9q2r8t4w7y1z3`
+
+**Optional (but recommended):**
+- `CFBD_API_KEY` = Your CFBD API key from https://collegefootballdata.com
+
+### Step 3: Deploy
+
+Railway will automatically:
+1. Detect Node.js project
+2. Run `npm install`
+3. Start server with `npm start`
+4. Expose public URL
+
+### Step 4: Test
+
+Once deployed, your bot can connect to:
+```
+https://your-project.up.railway.app/mcp
 ```
 
-### Step 2: Deploy to Railway
-
-1. **Go to Railway**: https://railway.app
-
-2. **Create New Project**
-   - Click "New Project"
-   - Select "Deploy from GitHub repo"
-   - Authorize GitHub if needed
-
-3. **Select Repository**
-   - Choose `espn-mcp-server`
-   - Railway detects Dockerfile automatically
-
-4. **Wait for Deployment** (2-3 minutes)
-   - Railway builds Docker image
-   - Starts the server
-   - Assigns public URL
-
-5. **Get Your URL**
-   - Click your project
-   - Go to "Settings" → "Networking"
-   - Click "Generate Domain"
-   - Copy URL: `your-app-name.up.railway.app`
-
-### Step 3: Configure Environment (Optional)
-
-If using CollegeFootballData.com API:
-
-1. **Get API Key**
-   - Go to https://collegefootballdata.com
-   - Sign up (free)
-   - Generate API key
-
-2. **Add to Railway**
-   - Railway dashboard → Your project
-   - Click "Variables" tab
-   - Click "New Variable"
-   - Name: `CFBD_API_KEY`
-   - Value: [paste your key]
-   - Click "Add"
-
-3. **Redeploy**
-   - Railway automatically redeploys
-   - Wait 1-2 minutes
-
-### Step 4: Test Deployment
-
-Test your endpoints:
-```bash
-# Health check
-curl https://your-app-name.up.railway.app/health
-
-# Get Oklahoma score
-curl https://your-app-name.up.railway.app/score?team=oklahoma
-
-# Get schedule
-curl https://your-app-name.up.railway.app/schedule?team=oklahoma&limit=3
-
-# Test CFBD (if key configured)
-curl https://your-app-name.up.railway.app/cfbd/recruiting?team=oklahoma
+With Bearer token authentication:
+```
+Authorization: Bearer sk_live_boomerbot_a8f7d2e9c4b1x6m3n5p9q2r8t4w7y1z3
 ```
 
-Expected responses:
-- Health check: `{"status":"healthy",...}`
-- Score: Game data or "No recent games"
-- Schedule: Array of upcoming games
+## 🔑 Getting CFBD API Key
 
-### Step 5: Monitor Deployment
+1. Go to https://collegefootballdata.com
+2. Click "Sign Up" or "Get API Key"
+3. Create free account
+4. Copy your API key
+5. Add to Railway as `CFBD_API_KEY`
 
-**View Logs:**
-- Railway dashboard → Your project
-- Click "Deployments" tab
-- Click latest deployment
-- View real-time logs
+## ✅ Verify Deployment
 
-**Check Metrics:**
-- Railway dashboard → Your project
-- Click "Metrics" tab
-- View CPU, Memory, Network usage
-
-## Updating Your Deployment
-
-When you make code changes:
+### Test Health Check
 ```bash
-# Make your changes
-# Test locally first
-
-# Commit and push
-git add .
-git commit -m "Description of changes"
-git push origin main
+curl https://your-project.up.railway.app/health
 ```
 
-Railway automatically:
-1. Detects the push
-2. Rebuilds Docker image
-3. Deploys new version
-4. Zero downtime deployment
+Should return:
+```json
+{
+  "status": "healthy",
+  "uptime": 123.45,
+  "cfbdEnabled": true,
+  "timestamp": "2025-11-19T..."
+}
+```
 
-## Custom Domain (Optional)
+### Test Tool Discovery
+```bash
+curl -X POST https://your-project.up.railway.app/mcp \
+  -H "Authorization: Bearer sk_live_boomerbot_a8f7d2e9c4b1x6m3n5p9q2r8t4w7y1z3" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "tools/list",
+    "id": 1
+  }'
+```
 
-Add your own domain:
+Should return list of 12 tools.
 
-1. **Railway Settings**
-   - Settings → Networking
-   - Click "Custom Domain"
-   - Enter your domain: `api.yourdomain.com`
+### Test Get Score
+```bash
+curl -X POST https://your-project.up.railway.app/mcp \
+  -H "Authorization: Bearer sk_live_boomerbot_a8f7d2e9c4b1x6m3n5p9q2r8t4w7y1z3" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+      "name": "get_score",
+      "arguments": {
+        "team": "oklahoma"
+      }
+    },
+    "id": 1
+  }'
+```
 
-2. **DNS Configuration**
-   - Add CNAME record in your DNS provider
-   - Point to Railway domain
-   - Wait for DNS propagation (5-30 minutes)
+Should return Oklahoma's most recent game score.
 
-## Troubleshooting
+## 🎯 12 Available Tools
 
-### "Build Failed"
+**ESPN Tools (Always work):**
+1. get_score - Current/recent game scores
+2. get_schedule - Team schedules
+3. get_scoreboard - Daily scoreboards
+4. get_rankings - AP Top 25
+
+**CFBD Tools (Require API key):**
+5. get_stats - Advanced analytics (EPA, Success Rate)
+6. get_recruiting - Recruiting rankings
+7. get_talent - Talent composites
+8. get_betting - Betting lines
+9. get_ratings - SP+ ratings
+10. get_records - Win-loss records
+
+**NCAA Tools (Always work):**
+11. get_ncaa_scoreboard - Multi-division scores
+12. get_ncaa_rankings - NCAA rankings
+
+## 🔧 Troubleshooting
+
+**Tools not discovered?**
+- Check MCP_API_KEY is set correctly
+- Verify Authorization header format: `Bearer YOUR_KEY`
 - Check Railway logs for errors
-- Verify `Dockerfile` is correct
-- Ensure `package.json` has all dependencies
 
-### "Server Not Responding"
-- Check if deployment is running (Railway dashboard)
-- View logs for startup errors
-- Verify PORT environment variable (Railway sets automatically)
+**CFBD tools failing?**
+- Make sure CFBD_API_KEY is set in Railway
+- Get free key at https://collegefootballdata.com
+- Check Railway logs to confirm key is loaded
 
-### "API Errors"
-- ESPN API is rate-limited, usually brief
-- CFBD requires API key for some endpoints
-- NCAA API occasionally has downtime
+**Server not starting?**
+- Check Railway build logs
+- Ensure all 5 files are uploaded
+- Verify package.json is present
 
-### "High Memory Usage"
-- Normal for caching data
-- Railway free tier: 512MB RAM
-- Upgrade to hobby tier if needed ($5/month)
+## 📊 Bot Configuration
 
-## Cost Estimate
+In your PaymeGPT bot settings:
 
-**Railway Free Tier:**
-- $5 free credit per month
-- ~500 hours of runtime
-- 512MB RAM, 1GB storage
-- **Cost: FREE** for this app
+**MCP Server URL:**
+```
+https://your-project.up.railway.app/mcp
+```
 
-**Railway Hobby Tier** ($5/month):
-- Unlimited hours
-- 512MB RAM
-- 1GB storage
-- **Recommended for production**
+**Authentication:**
+```
+Bearer sk_live_boomerbot_a8f7d2e9c4b1x6m3n5p9q2r8t4w7y1z3
+```
 
-## Scaling
+Then click "Discover Tools" - should find all 12 tools!
 
-This server can handle:
-- 1,000+ requests/minute
-- Multiple school bots
-- All on single Railway instance
+## ⚙️ Local Development
 
-No scaling needed until:
-- 50+ school bots
-- 10,000+ requests/minute
-- Then upgrade to Pro tier
+```bash
+# Install dependencies
+npm install
 
-## Security
+# Set environment variables (optional)
+export CFBD_API_KEY="your_cfbd_key"
 
-**Built-in Security:**
-- ✅ CORS enabled (safe cross-origin)
-- ✅ No authentication needed (public APIs)
-- ✅ Rate limiting via caching
-- ✅ Input validation on all endpoints
+# Run server
+npm start
 
-**API Keys:**
-- Only CFBD key needed
-- Stored as environment variable
-- Never committed to GitHub
+# Or run with auto-reload
+npm run dev
+```
 
-## Support
+Server runs on http://localhost:8080
 
-**Issues?**
-- Check Railway documentation: https://docs.railway.app
-- Check ESPN API status
-- Review server logs
+## 🎉 You're Done!
 
-**Questions?**
-- Open GitHub issue
-- Contact: kevin@thebotosphere.com
-
-## Next Steps
-
-After deployment:
-1. ✅ Test all endpoints
-2. ✅ Configure PaymeGPT bot to use your API
-3. ✅ Monitor usage for 24 hours
-4. ✅ Set up alerts (Railway settings)
-5. ✅ Launch Boomer Bot!
-
----
-
-**Deployment complete!** 🚀
-
-Your ESPN MCP Server is now live and ready to power your bots.
+Your ESPN MCP Server is now:
+- ✅ Fully deployed on Railway
+- ✅ JSON-RPC 2.0 compliant
+- ✅ Integrated with 3 data sources
+- ✅ Ready for bot discovery
+- ✅ 12 tools available
