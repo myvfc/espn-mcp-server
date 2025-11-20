@@ -1,36 +1,29 @@
 /**
- * ESPN MCP SERVER - COMPLETE WITH ALL API INTEGRATIONS
- * Multi-source sports data API combining ESPN, CFBD, and NCAA
+ * ESPN MCP SERVER - ESPN + NCAA ONLY
+ * Multi-source sports data API combining ESPN and NCAA
  * JSON-RPC 2.0 Compliant MCP Server
- * Created for The Botosphere - Boomer Bot
+ * Created for The Botosphere - Boomer Bot (Sky)
  */
 
-import express from 'express';
-import cors from 'cors';
-import { getGamePlayerStats } from './espn-player.js';
+import express from "express";
+import cors from "cors";
+
 import {
   getCurrentGame,
   getTeamSchedule,
   getScoreboard,
   getRankings,
-  clearCache as clearESPNCache
-} from './espn-api.js';
-import {
-  getRecruiting,
-  getTeamTalent,
-  getAdvancedStats,
-  getPlayerStats,
-  getBettingLines,
-  getSPRatings,
-  getTeamRecords,
-  clearCache as clearCFBDCache
-} from './cfbd-api.js';
+  clearCache as clearESPNCache,
+} from "./espn-api.js";
+
 import {
   getNCAAScoreboard,
   getNCAAankings,
   getConferenceStandings,
-  clearCache as clearNCAACache
-} from './ncaa-api.js';
+  clearCache as clearNCAACache,
+} from "./ncaa-api.js";
+
+import { getGamePlayerStats } from "./espn-player.js";
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -48,31 +41,32 @@ app.use((req, res, next) => {
 /**
  * ROOT ENDPOINT - Server info
  */
-app.get('/', (req, res) => {
+app.get("/", (req, res) => {
   res.json({
-    name: 'ESPN MCP Server',
-    version: '2.0.0',
-    description: 'Multi-source college sports data API - JSON-RPC 2.0 Compliant',
-    sources: ['ESPN', 'CollegeFootballData.com', 'NCAA.com'],
-    mcpEndpoint: 'POST /mcp (requires Bearer token)',
-    tools: 16,
-    status: 'operational',
+    name: "ESPN MCP Server",
+    version: "3.0.0",
+    description: "ESPN + NCAA college sports data API - JSON-RPC 2.0 Compliant",
+    sources: ["ESPN", "NCAA.com"],
+    mcpEndpoint: "POST /mcp (requires Bearer token)",
+    tools: 7,
+    status: "operational",
     timestamp: new Date().toISOString(),
-    note: 'CFBD tools require CFBD_API_KEY environment variable'
+    note: "CFBD has been removed. All stats are now powered by ESPN and NCAA.",
   });
 });
 
 /**
  * HEALTH CHECK
  */
-app.get('/health', (req, res) => {
-  const hasCFBDKey = !!process.env.CFBD_API_KEY;
-
+app.get("/health", (req, res) => {
   res.json({
-    status: 'healthy',
+    status: "healthy",
     uptime: process.uptime(),
-    cfbdEnabled: hasCFBDKey,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    sources: {
+      espn: true,
+      ncaa: true,
+    },
   });
 });
 
@@ -80,23 +74,23 @@ app.get('/health', (req, res) => {
  * MCP ENDPOINT - JSON-RPC 2.0 COMPLIANT
  * Handles tool discovery and tool calls
  */
-app.post('/mcp', async (req, res) => {
+app.post("/mcp", async (req, res) => {
   try {
     // Authentication check
     const authHeader = req.headers.authorization;
     const apiKey =
       process.env.MCP_API_KEY ||
-      'sk_live_boomerbot_a8f7d2e9c4b1x6m3n5p9q2r8t4w7y1z3';
+      "sk_live_boomerbot_a8f7d2e9c4b1x6m3n5p9q2r8t4w7y1z3";
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.json({
-        jsonrpc: '2.0',
+        jsonrpc: "2.0",
         error: {
           code: -32001,
           message:
-            'Missing or invalid authorization header. Use: Authorization: Bearer YOUR_API_KEY'
+            "Missing or invalid authorization header. Use: Authorization: Bearer YOUR_API_KEY",
         },
-        id: req.body?.id || null
+        id: req.body?.id || null,
       });
     }
 
@@ -104,12 +98,12 @@ app.post('/mcp', async (req, res) => {
 
     if (token !== apiKey) {
       return res.json({
-        jsonrpc: '2.0',
+        jsonrpc: "2.0",
         error: {
           code: -32002,
-          message: 'Invalid API key'
+          message: "Invalid API key",
         },
-        id: req.body?.id || null
+        id: req.body?.id || null,
       });
     }
 
@@ -117,402 +111,228 @@ app.post('/mcp', async (req, res) => {
     const { jsonrpc, method, params = {}, id } = req.body;
 
     // Validate JSON-RPC version
-    if (jsonrpc !== '2.0') {
+    if (jsonrpc !== "2.0") {
       return res.json({
-        jsonrpc: '2.0',
+        jsonrpc: "2.0",
         error: {
           code: -32600,
-          message: 'Invalid Request: jsonrpc must be "2.0"'
+          message: 'Invalid Request: jsonrpc must be "2.0"',
         },
-        id: id || null
+        id: id || null,
       });
     }
 
     // Validate method exists
     if (!method) {
       return res.json({
-        jsonrpc: '2.0',
+        jsonrpc: "2.0",
         error: {
           code: -32600,
-          message: 'Invalid Request: method is required'
+          message: "Invalid Request: method is required",
         },
-        id: id || null
+        id: id || null,
       });
     }
 
     console.log(`JSON-RPC Method: ${method}`, params);
 
     // ===== INITIALIZE (MCP Handshake) =====
-    if (method === 'initialize') {
+    if (method === "initialize") {
       return res.json({
-        jsonrpc: '2.0',
+        jsonrpc: "2.0",
         id: id,
         result: {
-          protocolVersion: '2024-11-05',
+          protocolVersion: "2024-11-05",
           capabilities: {
-            tools: {}
+            tools: {},
           },
           serverInfo: {
-            name: 'ESPN-CFBD-NCAA MCP Server',
-            version: '2.0.0'
-          }
-        }
+            name: "ESPN-NCAA MCP Server",
+            version: "3.0.0",
+          },
+        },
       });
     }
 
     // ===== TOOL DISCOVERY =====
-    if (method === 'tools/list') {
+    if (method === "tools/list") {
       return res.json({
-        jsonrpc: '2.0',
+        jsonrpc: "2.0",
         id: id,
         result: {
           tools: [
             // ESPN TOOLS
             {
-              name: 'get_score',
+              name: "get_score",
               description:
-                'Get current or most recent game score for a specific team. Returns live score if game is in progress, or final score from most recent completed game.',
+                "Get current or most recent game score for a specific team. Returns live score if game is in progress, or final score from most recent completed game.",
               inputSchema: {
-                type: 'object',
+                type: "object",
                 properties: {
                   team: {
-                    type: 'string',
+                    type: "string",
                     description:
-                      'Team name (e.g., "oklahoma", "texas", "alabama")'
+                      'Team name (e.g., "oklahoma", "texas", "alabama")',
                   },
                   sport: {
-                    type: 'string',
+                    type: "string",
                     description: 'Sport type (default: "football")',
-                    enum: ['football', 'basketball', 'baseball']
-                  }
+                    enum: ["football", "basketball", "baseball"],
+                  },
                 },
-                required: ['team']
-              }
+                required: ["team"],
+              },
             },
             {
-              name: 'get_schedule',
+              name: "get_schedule",
               description:
-                'Get upcoming schedule for a specific team, including game dates, opponents, locations, and broadcast info.',
+                "Get upcoming schedule for a specific team, including game dates, opponents, locations, and broadcast info.",
               inputSchema: {
-                type: 'object',
+                type: "object",
                 properties: {
                   team: {
-                    type: 'string',
-                    description: 'Team name'
+                    type: "string",
+                    description: "Team name",
                   },
                   sport: {
-                    type: 'string',
-                    description: 'Sport type (default: "football")'
+                    type: "string",
+                    description: 'Sport type (default: "football")',
                   },
                   limit: {
-                    type: 'number',
+                    type: "number",
                     description:
-                      'Number of games to return (default: 5, max: 20)'
-                  }
+                      "Number of games to return (default: 5, max: 20)",
+                  },
                 },
-                required: ['team']
-              }
+                required: ["team"],
+              },
             },
             {
-              name: 'get_scoreboard',
+              name: "get_scoreboard",
               description:
-                'Get scoreboard showing all games for today across all teams. Shows live scores and final scores.',
+                "Get scoreboard showing all games for a given date across all teams. Shows live scores and final scores.",
               inputSchema: {
-                type: 'object',
+                type: "object",
                 properties: {
                   sport: {
-                    type: 'string',
-                    description: 'Sport type (default: "football")'
+                    type: "string",
+                    description: 'Sport type (default: "football")',
                   },
                   date: {
-                    type: 'string',
-                    description: 'Date in YYYYMMDD format (default: today)'
-                  }
+                    type: "string",
+                    description:
+                      "Date in YYYYMMDD format (default: today, ESPN time zone)",
+                  },
                 },
-                required: []
-              }
+                required: [],
+              },
             },
             {
-              name: 'get_rankings',
+              name: "get_rankings",
               description:
-                'Get current AP Top 25 rankings or other poll rankings.',
+                "Get current AP Top 25 or Coaches Poll rankings for a given sport.",
               inputSchema: {
-                type: 'object',
+                type: "object",
                 properties: {
                   sport: {
-                    type: 'string',
-                    description: 'Sport type (default: "football")'
+                    type: "string",
+                    description: 'Sport type (default: "football")',
                   },
                   poll: {
-                    type: 'string',
+                    type: "string",
                     description:
-                      'Poll type: "ap" (AP Top 25) or "coaches" (default: "ap")'
-                  }
+                      'Poll type: "ap" (AP Top 25) or "coaches" (default: "ap")',
+                  },
                 },
-                required: []
-              }
+                required: [],
+              },
             },
             {
-              name: 'get_game_player_stats',
+              name: "get_game_player_stats",
               description:
-                'Get detailed per-game player statistics for a specific ESPN event (game). Returns passing, rushing, receiving, defensive, and special teams stats by team and player.',
+                "Get detailed per-game player statistics for a specific ESPN event (game). Returns passing, rushing, receiving, defensive, and special teams stats by team and player.",
               inputSchema: {
-                type: 'object',
+                type: "object",
                 properties: {
                   eventId: {
-                    type: 'string',
+                    type: "string",
                     description:
-                      'ESPN event ID for the game (e.g., "401752675").'
-                  }
-                },
-                required: ['eventId']
-              }
-            },
-
-            // CFBD TOOLS (Advanced Analytics & Traditional)
-            {
-              name: 'get_player_stats',
-              description:
-                'Get individual player statistics including passing yards, rushing yards, touchdowns, completions, interceptions, and other traditional stats. Use this when user asks about a specific player by name. Requires CFBD API key.',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  team: {
-                    type: 'string',
-                    description: 'Team name (e.g., "oklahoma")'
+                      'ESPN event ID for the game (e.g., "401752675").',
                   },
-                  year: {
-                    type: 'number',
-                    description: 'Season year (default: current year)'
-                  }
                 },
-                required: ['team']
-              }
-            },
-            {
-              name: 'get_team_stats',
-              description:
-                'Get team statistics including total passing yards, rushing yards, touchdowns, completions, and other traditional team totals. Use this when user asks about overall team performance. Requires CFBD API key.',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  team: {
-                    type: 'string',
-                    description: 'Team name'
-                  },
-                  year: {
-                    type: 'number',
-                    description: 'Season year (default: current year)'
-                  }
-                },
-                required: ['team']
-              }
-            },
-            {
-              name: 'get_advanced_stats',
-              description:
-                'Get advanced analytics including EPA (Expected Points Added), success rates, and explosiveness metrics. Use only when user specifically asks for efficiency or advanced analytics. Requires CFBD API key.',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  team: {
-                    type: 'string',
-                    description: 'Team name'
-                  },
-                  year: {
-                    type: 'number',
-                    description: 'Season year (default: current year)'
-                  },
-                  stat_type: {
-                    type: 'string',
-                    description:
-                      'Type of stats: "offense", "defense", or "both"',
-                    enum: ['offense', 'defense', 'both']
-                  }
-                },
-                required: ['team']
-              }
-            },
-            {
-              name: 'get_stats',
-              description:
-                'DEPRECATED: Use get_player_stats, get_team_stats, or get_advanced_stats instead.',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  team: {
-                    type: 'string',
-                    description: 'Team name'
-                  }
-                },
-                required: ['team']
-              }
-            },
-            {
-              name: 'get_recruiting',
-              description:
-                'Get recruiting class rankings, including national ranking, average star rating, number of commits, and top recruits. Requires CFBD API key.',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  team: {
-                    type: 'string',
-                    description: 'Team name'
-                  },
-                  year: {
-                    type: 'number',
-                    description:
-                      'Recruiting class year (default: current year)'
-                  }
-                },
-                required: ['team']
-              }
-            },
-            {
-              name: 'get_talent',
-              description:
-                'Get team talent composite score - a measure of overall roster talent based on recruiting rankings. Requires CFBD API key.',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  team: {
-                    type: 'string',
-                    description: 'Team name'
-                  },
-                  year: {
-                    type: 'number',
-                    description: 'Season year (default: current year)'
-                  }
-                },
-                required: ['team']
-              }
-            },
-            {
-              name: 'get_betting',
-              description:
-                'Get betting lines including point spreads, over/under, and moneyline for upcoming games. Requires CFBD API key.',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  team: {
-                    type: 'string',
-                    description: 'Team name'
-                  },
-                  week: {
-                    type: 'number',
-                    description: 'Week number (optional)'
-                  }
-                },
-                required: ['team']
-              }
-            },
-            {
-              name: 'get_ratings',
-              description:
-                'Get SP+ ratings (statistical power ratings) for teams including offensive, defensive, and special teams ratings. Requires CFBD API key.',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  team: {
-                    type: 'string',
-                    description: 'Team name'
-                  },
-                  year: {
-                    type: 'number',
-                    description: 'Season year (default: current year)'
-                  }
-                },
-                required: ['team']
-              }
-            },
-            {
-              name: 'get_records',
-              description:
-                'Get team win-loss records including overall, home, away, and conference records. Requires CFBD API key.',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  team: {
-                    type: 'string',
-                    description: 'Team name'
-                  },
-                  year: {
-                    type: 'number',
-                    description: 'Season year (default: current year)'
-                  }
-                },
-                required: ['team']
-              }
+                required: ["eventId"],
+              },
             },
 
             // NCAA TOOLS (Multi-division)
             {
-              name: 'get_ncaa_scoreboard',
+              name: "get_ncaa_scoreboard",
               description:
-                'Get NCAA scoreboard for any sport and any division (FBS, FCS, Division II, Division III).',
+                "Get NCAA scoreboard for any sport and any division (FBS, FCS, Division II, Division III).",
               inputSchema: {
-                type: 'object',
+                type: "object",
                 properties: {
                   sport: {
-                    type: 'string',
+                    type: "string",
                     description:
-                      'Sport (e.g., "football", "basketball", "baseball", "softball")'
+                      'Sport (e.g., "football", "basketball", "baseball", "softball")',
                   },
                   division: {
-                    type: 'string',
+                    type: "string",
                     description:
-                      'Division: "fbs", "fcs", "d2", "d3" (default: "fbs")'
+                      'Division: "fbs", "fcs", "d2", "d3" (default: "fbs")',
                   },
                   date: {
-                    type: 'string',
-                    description: 'Date in YYYYMMDD format (default: today)'
-                  }
+                    type: "string",
+                    description:
+                      "Date in YYYYMMDD format (default: today, NCAA time zone)",
+                  },
                 },
-                required: ['sport']
-              }
+                required: ["sport"],
+              },
             },
             {
-              name: 'get_ncaa_rankings',
+              name: "get_ncaa_rankings",
               description:
-                'Get NCAA poll rankings for any sport and division.',
+                "Get NCAA poll rankings for any sport and division (e.g., football AP poll, basketball rankings).",
               inputSchema: {
-                type: 'object',
+                type: "object",
                 properties: {
                   sport: {
-                    type: 'string',
-                    description: 'Sport name'
+                    type: "string",
+                    description: "Sport name",
                   },
                   division: {
-                    type: 'string',
+                    type: "string",
                     description:
-                      'Division: "fbs", "fcs", "d2", "d3" (default: "fbs")'
+                      'Division: "fbs", "fcs", "d2", "d3" (default: "fbs")',
                   },
                   poll: {
-                    type: 'string',
+                    type: "string",
                     description:
-                      'Poll type: "ap", "coaches", "playoff" (default: "ap")'
-                  }
+                      'Poll type: "ap", "coaches", "playoff" (default: "ap")',
+                  },
                 },
-                required: ['sport']
-              }
-            }
-          ]
-        }
+                required: ["sport"],
+              },
+            },
+          ],
+        },
       });
     }
 
     // ===== TOOL CALLS =====
-    if (method === 'tools/call') {
+    if (method === "tools/call") {
       const { name, arguments: args } = params;
 
       if (!name) {
         return res.json({
-          jsonrpc: '2.0',
+          jsonrpc: "2.0",
           error: {
             code: -32602,
-            message: 'Invalid params: tool name is required'
+            message: "Invalid params: tool name is required",
           },
-          id: id
+          id: id,
         });
       }
 
@@ -524,102 +344,72 @@ app.post('/mcp', async (req, res) => {
       try {
         switch (name) {
           // ESPN TOOLS
-          case 'get_score':
+          case "get_score":
             result = await handleGetScore(args);
             break;
-          case 'get_schedule':
+          case "get_schedule":
             result = await handleGetSchedule(args);
             break;
-          case 'get_scoreboard':
+          case "get_scoreboard":
             result = await handleGetScoreboard(args);
             break;
-          case 'get_rankings':
+          case "get_rankings":
             result = await handleGetRankings(args);
             break;
-          case 'get_game_player_stats':
+          case "get_game_player_stats":
             result = await handleGetGamePlayerStats(args);
             break;
 
-          // CFBD TOOLS
-          case 'get_player_stats':
-            result = await handleGetPlayerStats(args);
-            break;
-          case 'get_team_stats':
-            result = await handleGetTeamStats(args);
-            break;
-          case 'get_advanced_stats':
-            result = await handleGetAdvancedStats(args);
-            break;
-          case 'get_stats':
-            // Deprecated - redirect to advanced stats
-            result = await handleGetAdvancedStats(args);
-            break;
-          case 'get_recruiting':
-            result = await handleGetRecruiting(args);
-            break;
-          case 'get_talent':
-            result = await handleGetTalent(args);
-            break;
-          case 'get_betting':
-            result = await handleGetBetting(args);
-            break;
-          case 'get_ratings':
-            result = await handleGetRatings(args);
-            break;
-          case 'get_records':
-            result = await handleGetRecords(args);
-            break;
-
           // NCAA TOOLS
-          case 'get_ncaa_scoreboard':
+          case "get_ncaa_scoreboard":
             result = await handleGetNCAAScoreboard(args);
             break;
-          case 'get_ncaa_rankings':
+          case "get_ncaa_rankings":
             result = await handleGetNCAAankings(args);
             break;
 
           default:
             return res.json({
-              jsonrpc: '2.0',
+              jsonrpc: "2.0",
               error: {
                 code: -32601,
-                message: `Unknown tool: ${name}. Use tools/list to see available tools.`
+                message: `Unknown tool: ${name}. Use tools/list to see available tools.`,
               },
-              id: id
+              id: id,
             });
         }
 
         // Return successful result
         return res.json({
-          jsonrpc: '2.0',
+          jsonrpc: "2.0",
           id: id,
           result: {
             content: [
               {
-                type: 'text',
+                type: "text",
                 text:
-                  typeof result === 'string'
+                  typeof result === "string"
                     ? result
-                    : JSON.stringify(result, null, 2)
-              }
-            ]
-          }
+                    : JSON.stringify(result, null, 2),
+              },
+            ],
+          },
         });
       } catch (error) {
         console.error(`Tool ${name} error:`, error);
         return res.json({
-          jsonrpc: '2.0',
+          jsonrpc: "2.0",
           error: {
             code: -32000,
-            message: `Tool execution failed: ${error.message}`
+            message: `Tool execution failed: ${error.message}`,
           },
-          id: id
+          id: id,
         });
       }
     }
 
     // ===== NOTIFICATIONS =====
-    if (method === 'notifications/initialized') {
+    if (method === "notifications/initialized") {
       // Client is notifying server that initialization is complete
       // No response needed for notifications
       return res.status(204).send();
@@ -627,23 +417,23 @@ app.post('/mcp', async (req, res) => {
 
     // Unknown method
     return res.json({
-      jsonrpc: '2.0',
+      jsonrpc: "2.0",
       error: {
         code: -32601,
-        message: `Method not found: ${method}`
+        message: `Method not found: ${method}`,
       },
-      id: id
+      id: id,
     });
   } catch (error) {
-    console.error('MCP endpoint error:', error);
+    console.error("MCP endpoint error:", error);
     return res.json({
-      jsonrpc: '2.0',
+      jsonrpc: "2.0",
       error: {
         code: -32603,
-        message: 'Internal error',
-        data: error.message
+        message: "Internal error",
+        data: error.message,
       },
-      id: req.body?.id || null
+      id: req.body?.id || null,
     });
   }
 });
@@ -653,7 +443,7 @@ app.post('/mcp', async (req, res) => {
  */
 
 async function handleGetScore(args) {
-  const { team, sport = 'football' } = args;
+  const { team, sport = "football" } = args;
   const result = await getCurrentGame(team, sport);
 
   if (result.error) {
@@ -692,7 +482,7 @@ async function handleGetScore(args) {
 }
 
 async function handleGetSchedule(args) {
-  const { team, sport = 'football', limit = 5 } = args;
+  const { team, sport = "football", limit = 5 } = args;
   const result = await getTeamSchedule(team, sport, limit);
 
   if (result.error) {
@@ -717,7 +507,7 @@ async function handleGetSchedule(args) {
 }
 
 async function handleGetScoreboard(args) {
-  const { sport = 'football', date } = args;
+  const { sport = "football", date } = args;
   const result = await getScoreboard(sport, date);
 
   if (result.error) {
@@ -726,7 +516,7 @@ async function handleGetScoreboard(args) {
 
   let text = `Scoreboard for ${result.date}:\n\n`;
 
-  result.games.forEach(game => {
+  result.games.forEach((game) => {
     text += `${game.awayTeam.name} ${game.awayTeam.score} @ ${game.homeTeam.name} ${game.homeTeam.score}`;
     text += ` - ${game.status}`;
     if (game.isLive) {
@@ -739,7 +529,7 @@ async function handleGetScoreboard(args) {
 }
 
 async function handleGetRankings(args) {
-  const { sport = 'football', poll = 'ap' } = args;
+  const { sport = "football", poll = "ap" } = args;
   const result = await getRankings(sport, poll);
 
   if (result.error) {
@@ -748,7 +538,7 @@ async function handleGetRankings(args) {
 
   let text = `${result.poll} - Week ${result.week}\n\n`;
 
-  result.teams.slice(0, 25).forEach(team => {
+  result.teams.slice(0, 25).forEach((team) => {
     text += `${team.rank}. ${team.team} (${team.record})`;
     if (team.points) {
       text += ` - ${team.points} pts`;
@@ -763,288 +553,21 @@ async function handleGetGamePlayerStats(args) {
   const { eventId } = args;
 
   if (!eventId) {
-    return 'You must provide an ESPN eventId (e.g., 401752675) to get game player stats.';
+    return "Missing required argument: eventId";
   }
 
-  const data = await getGamePlayerStats(eventId);
+  console.log(`handleGetGamePlayerStats called: eventId=${eventId}`);
 
-  let text = `Player statistics for ESPN Event ${data.eventId}:\n\n`;
-
-  for (const team of data.teams) {
-    text += `=== ${team.name || team.abbreviation} ===\n`;
-
-    for (const [categoryName, category] of Object.entries(
-      team.statistics || {}
-    )) {
-      text += `\n${categoryName.toUpperCase()}:\n`;
-
-      for (const player of category.players || []) {
-        const name = player.name || 'Unknown Player';
-        const pos = player.position ? ` (${player.position})` : '';
-        text += `- ${name}${pos}: `;
-
-        const stats = player.stats || {};
-        const statPieces = [];
-
-        for (const [label, value] of Object.entries(stats)) {
-          if (value !== null && value !== undefined && value !== '') {
-            statPieces.push(`${label}: ${value}`);
-          }
-        }
-
-        text += statPieces.length
-          ? statPieces.join(', ')
-          : 'no recorded stats';
-        text += `\n`;
-      }
-    }
-
-    text += `\n`;
-  }
-
-  return text;
-}
-
-/**
- * TOOL HANDLERS - CFBD
- */
-
-async function handleGetPlayerStats(args) {
-  const { team, year } = args;
-
-  console.log(
-    `handleGetPlayerStats called: team=${team}, year=${year || 'current'}`
-  );
-
-  const result = await getPlayerStats(team, year);
+  const result = await getGamePlayerStats(eventId);
 
   if (result.error) {
-    console.log(`getPlayerStats returned error: ${result.message}`);
+    console.log(`getGamePlayerStats returned error: ${result.message}`);
     return result.message;
   }
 
-  console.log(`Player stats retrieved: ${result.players.length} stat entries`);
-
-  // Format player stats
-  let text = `${result.team} Player Stats (${result.year}):\n\n`;
-
-  // Group by player and category
-  const playerData = {};
-  result.players.forEach(stat => {
-    const playerName = stat.player || stat.athlete || 'Unknown';
-    if (!playerData[playerName]) {
-      playerData[playerName] = {};
-    }
-    const category = stat.category || 'general';
-    if (!playerData[playerName][category]) {
-      playerData[playerName][category] = [];
-    }
-    playerData[playerName][category].push({
-      stat: stat.statType || stat.stat,
-      value: stat.stat || stat.statValue
-    });
-  });
-
-  // Display top players
-  const players = Object.keys(playerData).slice(0, 10);
-  for (const playerName of players) {
-    text += `${playerName}:\n`;
-    for (const [category, stats] of Object.entries(playerData[playerName])) {
-      stats.forEach(s => {
-        text += `  ${s.stat}: ${s.value}\n`;
-      });
-    }
-    text += `\n`;
-  }
-
-  if (Object.keys(playerData).length > 10) {
-    text += `(Showing top 10 players - ${
-      Object.keys(playerData).length
-    } total players with stats)\n`;
-  }
-
-  return text;
-}
-
-async function handleGetTeamStats(args) {
-  const { team, year } = args;
-
-  console.log(
-    `handleGetTeamStats called: team=${team}, year=${year || 'current'}`
-  );
-
-  // Get player stats and aggregate them for team totals
-  const result = await getPlayerStats(team, year);
-
-  if (result.error) {
-    console.log(`getPlayerStats returned error: ${result.message}`);
-    return result.message;
-  }
-
-  // Aggregate stats
-  const teamTotals = {};
-  result.players.forEach(stat => {
-    const statType = stat.statType || stat.stat || stat.category;
-    const value = parseFloat(stat.stat || stat.statValue || 0);
-    if (!teamTotals[statType]) {
-      teamTotals[statType] = 0;
-    }
-    teamTotals[statType] += value;
-  });
-
-  let text = `${result.team} Team Stats (${result.year}):\n\n`;
-
-  for (const [stat, value] of Object.entries(teamTotals)) {
-    text += `${stat}: ${value}\n`;
-  }
-
-  return text;
-}
-
-async function handleGetAdvancedStats(args) {
-  const { team, year, stat_type = 'both' } = args;
-
-  console.log(
-    `handleGetAdvancedStats called: team=${team}, year=${year || 'current'}, stat_type=${stat_type}`
-  );
-
-  const result = await getAdvancedStats(team, year, stat_type);
-
-  if (result.error) {
-    console.log(`getAdvancedStats returned error: ${result.message}`);
-    return result.message;
-  }
-
-  console.log(`getAdvancedStats succeeded for ${result.team}`);
-
-  let text = `Advanced Stats for ${result.team} (${result.year}):\n\n`;
-
-  if (result.offense) {
-    text += `OFFENSE:\n`;
-    text += `  EPA/Play: ${result.offense.ppa?.toFixed(3) || 'N/A'}\n`;
-    text += `  Success Rate: ${
-      (result.offense.successRate * 100)?.toFixed(1) || 'N/A'
-    }%\n`;
-    text += `  Explosiveness: ${
-      result.offense.explosiveness?.toFixed(3) || 'N/A'
-    }\n`;
-    text += `  Stuff Rate: ${
-      (result.offense.stuffRate * 100)?.toFixed(1) || 'N/A'
-    }%\n\n`;
-  }
-
-  if (result.defense) {
-    text += `DEFENSE:\n`;
-    text += `  EPA/Play Allowed: ${
-      result.defense.ppa?.toFixed(3) || 'N/A'
-    }\n`;
-    text += `  Success Rate Allowed: ${
-      (result.defense.successRate * 100)?.toFixed(1) || 'N/A'
-    }%\n`;
-    text += `  Explosiveness Allowed: ${
-      result.defense.explosiveness?.toFixed(3) || 'N/A'
-    }\n`;
-    text += `  Stuff Rate: ${
-      (result.defense.stuffRate * 100)?.toFixed(1) || 'N/A'
-    }%\n`;
-  }
-
-  return text;
-}
-
-async function handleGetRecruiting(args) {
-  const { team, year } = args;
-  const result = await getRecruiting(team, year);
-
-  if (result.error) {
-    return result.message;
-  }
-
-  let text = `Recruiting Class for ${result.team} (${result.year}):\n\n`;
-  text += `National Rank: #${result.rank}\n`;
-  text += `Total Points: ${result.points}\n`;
-  text += `Number of Commits: ${result.commits}\n`;
-  text += `Average Rating: ${result.average?.toFixed(2)} stars\n`;
-
-  return text;
-}
-
-async function handleGetTalent(args) {
-  const { team, year } = args;
-  const result = await getTeamTalent(team, year);
-
-  if (result.error) {
-    return result.message;
-  }
-
-  return `Talent Composite for ${result.team} (${result.year}): ${
-    result.talent?.toFixed(2) || 'N/A'
-  }`;
-}
-
-async function handleGetBetting(args) {
-  const { team, week } = args;
-  const result = await getBettingLines(team, week);
-
-  if (result.error) {
-    return result.message;
-  }
-
-  let text = `Betting Lines for ${result.team}:\n\n`;
-
-  result.games.forEach(game => {
-    text += `${game.awayTeam} @ ${game.homeTeam}\n`;
-    if (game.spread) {
-      text += `  Spread: ${game.spread}\n`;
-    }
-    if (game.overUnder) {
-      text += `  Over/Under: ${game.overUnder}\n`;
-    }
-    if (game.provider) {
-      text += `  Source: ${game.provider}\n`;
-    }
-    text += `\n`;
-  });
-
-  return text;
-}
-
-async function handleGetRatings(args) {
-  const { team, year } = args;
-  const result = await getSPRatings(team, year);
-
-  if (result.error) {
-    return result.message;
-  }
-
-  let text = `SP+ Ratings for ${result.team} (${result.year}):\n\n`;
-  text += `Overall Rating: ${result.rating?.toFixed(2) || 'N/A'}\n`;
-  text += `National Rank: #${result.ranking || 'N/A'}\n`;
-  text += `Offense: ${result.offense?.toFixed(2) || 'N/A'}\n`;
-  text += `Defense: ${result.defense?.toFixed(2) || 'N/A'}\n`;
-  text += `Special Teams: ${result.specialTeams?.toFixed(2) || 'N/A'}\n`;
-
-  return text;
-}
-
-async function handleGetRecords(args) {
-  const { team, year } = args;
-  const result = await getTeamRecords(team, year);
-
-  if (result.error) {
-    return result.message;
-  }
-
-  let text = `Records for ${result.team} (${result.year}):\n\n`;
-  text += `Overall: ${result.total.wins}-${result.total.losses}`;
-  if (result.total.ties) text += `-${result.total.ties}`;
-  text += `\n`;
-
-  text += `Conference: ${result.conferenceGames.wins}-${result.conferenceGames.losses}\n`;
-  text += `Home: ${result.homeGames.wins}-${result.homeGames.losses}\n`;
-  text += `Away: ${result.awayGames.wins}-${result.awayGames.losses}\n`;
-
-  return text;
+  // You can either return raw structured JSON or a nicely formatted summary.
+  // For MCP, we typically return structured data (so the model can format it).
+  return result;
 }
 
 /**
@@ -1052,18 +575,18 @@ async function handleGetRecords(args) {
  */
 
 async function handleGetNCAAScoreboard(args) {
-  const { sport, division = 'fbs', date } = args;
+  const { sport, division = "fbs", date } = args;
   const result = await getNCAAScoreboard(sport, division, date);
 
   if (result.error) {
     return result.message;
   }
 
-  let text = `${result.sport.toUpperCase()} ${result.division} Scoreboard (${
-    result.date
-  }):\n\n`;
+  let text = `${result.sport.toUpperCase()} ${
+    result.division
+  } Scoreboard (${result.date}):\n\n`;
 
-  result.games.forEach(game => {
+  result.games.forEach((game) => {
     text += `${game.awayTeam.name} ${game.awayTeam.score} @ ${game.homeTeam.name} ${game.homeTeam.score}`;
     text += ` - ${game.status}`;
     if (game.isLive) {
@@ -1076,7 +599,7 @@ async function handleGetNCAAScoreboard(args) {
 }
 
 async function handleGetNCAAankings(args) {
-  const { sport, division = 'fbs', poll = 'ap' } = args;
+  const { sport, division = "fbs", poll = "ap" } = args;
   const result = await getNCAAankings(sport, division, poll);
 
   if (result.error) {
@@ -1088,7 +611,7 @@ async function handleGetNCAAankings(args) {
   }\n`;
   text += `Week ${result.week}, Season ${result.season}\n\n`;
 
-  result.teams.slice(0, 25).forEach(team => {
+  result.teams.slice(0, 25).forEach((team) => {
     text += `${team.rank}. ${team.team} (${team.record})`;
     if (team.points) {
       text += ` - ${team.points} pts`;
@@ -1104,14 +627,13 @@ async function handleGetNCAAankings(args) {
  */
 
 // Clear all caches
-app.post('/clear-cache', (req, res) => {
+app.post("/clear-cache", (req, res) => {
   clearESPNCache();
-  clearCFBDCache();
   clearNCAACache();
 
   res.json({
-    message: 'All caches cleared successfully',
-    timestamp: new Date().toISOString()
+    message: "All caches cleared successfully",
+    timestamp: new Date().toISOString(),
   });
 });
 
@@ -1120,77 +642,61 @@ app.post('/clear-cache', (req, res) => {
  */
 app.use((req, res) => {
   res.status(404).json({
-    error: 'Endpoint not found',
+    error: "Endpoint not found",
     availableEndpoints: {
-      'POST /mcp':
-        'MCP JSON-RPC 2.0 endpoint (requires Bearer token)',
-      'GET /': 'Server information',
-      'GET /health': 'Health check',
-      'POST /clear-cache': 'Clear all caches'
-    }
+      "POST /mcp": "MCP JSON-RPC 2.0 endpoint (requires Bearer token)",
+      "GET /": "Server information",
+      "GET /health": "Health check",
+      "POST /clear-cache": "Clear all caches",
+    },
   });
 });
 
 app.use((error, req, res, next) => {
-  console.error('Server error:', error);
-  res.status(500).json({ error: 'Internal server error' });
+  console.error("Server error:", error);
+  res.status(500).json({ error: "Internal server error" });
 });
+
 /**
  * SELF-PING KEEPALIVE — Prevent Railway from idling the container
  * Pings the server's own /health endpoint every 30 seconds.
- * Works on all Railway plans (free or paid).
  */
-
-const KEEPALIVE_URL = process.env.KEEPALIVE_URL || "http://localhost:" + PORT + "/health";
+const KEEPALIVE_URL =
+  process.env.KEEPALIVE_URL || `http://localhost:${PORT}/health`;
 
 setInterval(async () => {
   try {
     const res = await fetch(KEEPALIVE_URL);
-    const status = await res.text();
+    await res.text();
     console.log(`[KEEPALIVE] Ping OK: ${KEEPALIVE_URL}`);
   } catch (err) {
     console.log(`[KEEPALIVE] Ping FAILED: ${KEEPALIVE_URL}`);
   }
-}, 30000);  // every 30 seconds
+}, 30000); // every 30 seconds
 
 /**
  * START SERVER
  */
-
-
 app.listen(PORT, () => {
-  console.log('='.repeat(60));
-  console.log('ESPN MCP SERVER - FULLY INTEGRATED');
-  console.log('='.repeat(60));
+  console.log("=".repeat(60));
+  console.log("ESPN MCP SERVER - FULLY INTEGRATED (ESPN + NCAA ONLY)");
+  console.log("=".repeat(60));
   console.log(`Server running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
+  console.log(`MCP endpoint:  http://localhost:${PORT}/mcp (POST with Bearer)`);
+  console.log("=".repeat(60));
+  console.log("Data Sources:");
+  console.log("  ✓ ESPN API (scores, schedules, rankings, game player stats)");
+  console.log("  ✓ NCAA API (multi-division coverage)");
+  console.log("=".repeat(60));
+  console.log("7 Tools Available:");
   console.log(
-    `MCP endpoint: http://localhost:${PORT}/mcp (POST with Bearer token)`
+    "  ESPN: get_score, get_schedule, get_scoreboard, get_rankings, get_game_player_stats"
   );
-  console.log('='.repeat(60));
-  console.log('Data Sources:');
-  console.log('  ✓ ESPN API (scores, schedules, rankings)');
-  console.log(
-    `  ${process.env.CFBD_API_KEY ? '✓' : '✗'} CFBD API (analytics, recruiting, betting)`
-  );
-  console.log('  ✓ NCAA API (multi-division coverage)');
-  console.log('='.repeat(60));
-  console.log('16 Tools Available:');
-  console.log(
-    '  ESPN: get_score, get_schedule, get_scoreboard, get_rankings, get_game_player_stats'
-  );
-  console.log(
-    '  CFBD: get_player_stats, get_team_stats, get_advanced_stats, get_recruiting, get_talent, get_betting, get_ratings, get_records, get_stats (deprecated)'
-  );
-  console.log('  NCAA: get_ncaa_scoreboard, get_ncaa_rankings');
-  console.log('='.repeat(60));
+  console.log("  NCAA: get_ncaa_scoreboard, get_ncaa_rankings");
+  console.log("=".repeat(60));
   console.log(`Started at: ${new Date().toISOString()}`);
-  console.log('='.repeat(60));
-
-  if (!process.env.CFBD_API_KEY) {
-    console.log('\n⚠️  WARNING: CFBD_API_KEY not set!');
-    console.log('CFBD tools will not work without an API key.');
-    console.log('Get free key at: https://collegefootballdata.com\n');
-  }
+  console.log("=".repeat(60));
 });
+
 
