@@ -24,6 +24,7 @@ import {
 } from "./ncaa-api.js";
 
 import { getGamePlayerStats } from "./espn-player.js";
+import { startRulesEngine } from "./nil-rules-engine.js";
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -565,8 +566,6 @@ async function handleGetGamePlayerStats(args) {
     return result.message;
   }
 
-  // You can either return raw structured JSON or a nicely formatted summary.
-  // For MCP, we typically return structured data (so the model can format it).
   return result;
 }
 
@@ -698,5 +697,8 @@ app.listen(PORT, () => {
   console.log(`Started at: ${new Date().toISOString()}`);
   console.log("=".repeat(60));
 });
+
+startRulesEngine();
+
 
 
