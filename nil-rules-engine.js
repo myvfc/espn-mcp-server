@@ -47,6 +47,7 @@ function buildMessage(trigger, teamName) {
     comeback: `${teamName} came back from behind. This team never quits — support them.`,
     close_game: `${teamName} in a battle — within one score in the 4th. Rally behind them.`,
     win: `${teamName} wins! Celebrate by supporting the athletes who delivered.`,
+    demo: `⚡ DEMO: This is how a live NIL moment looks during a game. Support your athletes!`,
   };
   return messages[trigger] || `${teamName} moment — support your athletes.`;
 }
@@ -56,10 +57,6 @@ function buildMessage(trigger, teamName) {
 
 const gameState = {};
 const lastFiredAt = {};
-
-function getSchoolKey(school) {
-  return school;
-}
 
 function canFire(school, cooldownMinutes) {
   const last = lastFiredAt[school];
@@ -74,7 +71,7 @@ function recordFire(school) {
 
 // ── SUPABASE INSERT ───────────────────────────────────────────────────────────
 
-async function fireNilTrigger(school, trigger, message, nilUrl) {
+export async function fireNilTrigger(school, trigger, message, nilUrl) {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
@@ -185,7 +182,7 @@ async function checkSchool(school, config) {
     } else if (
       game.period >= 4 &&
       Math.abs(myScore - oppScore) <= 7 &&
-      canFire(school, cooldown * 2) // longer cooldown for close game alerts
+      canFire(school, cooldown * 2)
     ) {
       await fireNilTrigger(school, "close_game", buildMessage("close_game", teamName), config.nil_url);
     }
@@ -199,7 +196,6 @@ async function checkSchool(school, config) {
 }
 
 // ── WIN DETECTION ─────────────────────────────────────────────────────────────
-// Separate pass for final score — fires once when game goes from live to final
 
 const firedWin = {};
 
@@ -268,3 +264,4 @@ export function startRulesEngine() {
   scheduleWinReset();
   console.log("[NIL Engine] Running — polling every 30 seconds.");
 }
+
