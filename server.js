@@ -24,7 +24,7 @@ import {
 } from "./ncaa-api.js";
 
 import { getGamePlayerStats } from "./espn-player.js";
-import { startRulesEngine } from "./nil-rules-engine.js";
+import { startRulesEngine, fireNilTrigger } from "./nil-rules-engine.js";
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -69,6 +69,76 @@ app.get("/health", (req, res) => {
       ncaa: true,
     },
   });
+});
+
+/**
+ * NIL DEMO ENDPOINT
+ * Fire a test NIL notification to any school's app for demos.
+ * Usage: GET /nil-demo/sooners
+ *        GET /nil-demo/cowboys
+ *        GET /nil-demo/longhorns
+ * Optional query param: ?trigger=touchdown|comeback|lead_change|close_game|win
+ */
+app.get("/nil-demo/:school", async (req, res) => {
+  const validSchools = ["sooners", "cowboys", "longhorns"];
+  const validTriggers = ["touchdown", "comeback", "lead_change", "close_game", "win", "demo"];
+
+  const school = req.params.school.toLowerCase();
+  const trigger = (req.query.trigger || "demo").toLowerCase();
+  const customMessage = req.query.message ? decodeURIComponent(req.query.message) : null;
+
+  if (!validSchools.includes(school)) {
+    return res.status(400).json({
+      ok: false,
+      error: `Invalid school. Use: ${validSchools.join(", ")}`,
+    });
+  }
+
+  if (!validTriggers.includes(trigger)) {
+    return res.status(400).json({
+      ok: false,
+      error: `Invalid trigger. Use: ${validTriggers.join(", ")}`,
+    });
+  }
+
+  const teamNames = {
+    sooners: "Oklahoma Sooners",
+    cowboys: "Oklahoma State Cowboys",
+    longhorns: "Texas Longhorns",
+  };
+
+  const nilUrls = {
+    sooners: process.env.NIL_URL_SOONERS || "https://xsen.fun",
+    cowboys: process.env.NIL_URL_COWBOYS || "https://xsen.fun",
+    longhorns: process.env.NIL_URL_LONGHORNS || "https://xsen.fun",
+  };
+
+  const defaultMessages = {
+    touchdown: `${teamNames[school]} just scored! Support the athletes making these moments happen.`,
+    comeback: `${teamNames[school]} came back from behind. This team never quits — support them.`,
+    lead_change: `${teamNames[school]} just took the lead! Back the team when it matters most.`,
+    close_game: `${teamNames[school]} in a battle — within one score in the 4th. Rally behind them.`,
+    win: `${teamNames[school]} wins! Celebrate by supporting the athletes who delivered.`,
+    demo: `⚡ DEMO: This is how a live NIL moment looks during a game. Support your athletes!`,
+  };
+
+  const message = customMessage || defaultMessages[trigger];
+
+  try {
+    await fireNilTrigger(school, trigger, message, nilUrls[school]);
+    console.log(`[NIL Demo] Fired ${trigger} for ${school}`);
+    res.json({
+      ok: true,
+      school,
+      trigger,
+      message: message,
+      nil_url: nilUrls[school],
+      note: "Notification will appear in the app within 30 seconds.",
+    });
+  } catch (err) {
+    console.error(`[NIL Demo] Error: ${err.message}`);
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 /**
@@ -411,8 +481,6 @@ app.post("/mcp", async (req, res) => {
 
     // ===== NOTIFICATIONS =====
     if (method === "notifications/initialized") {
-      // Client is notifying server that initialization is complete
-      // No response needed for notifications
       return res.status(204).send();
     }
 
@@ -646,6 +714,7 @@ app.use((req, res) => {
       "POST /mcp": "MCP JSON-RPC 2.0 endpoint (requires Bearer token)",
       "GET /": "Server information",
       "GET /health": "Health check",
+      "GET /nil-demo/:school": "Fire a demo NIL notification (sooners, cowboys, longhorns)",
       "POST /clear-cache": "Clear all caches",
     },
   });
@@ -658,7 +727,6 @@ app.use((error, req, res, next) => {
 
 /**
  * SELF-PING KEEPALIVE — Prevent Railway from idling the container
- * Pings the server's own /health endpoint every 30 seconds.
  */
 const KEEPALIVE_URL =
   process.env.KEEPALIVE_URL || `http://localhost:${PORT}/health`;
@@ -671,7 +739,7 @@ setInterval(async () => {
   } catch (err) {
     console.log(`[KEEPALIVE] Ping FAILED: ${KEEPALIVE_URL}`);
   }
-}, 30000); // every 30 seconds
+}, 30000);
 
 /**
  * START SERVER
@@ -683,6 +751,7 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
   console.log(`MCP endpoint:  http://localhost:${PORT}/mcp (POST with Bearer)`);
+  console.log(`NIL demo:      http://localhost:${PORT}/nil-demo/:school`);
   console.log("=".repeat(60));
   console.log("Data Sources:");
   console.log("  ✓ ESPN API (scores, schedules, rankings, game player stats)");
@@ -699,6 +768,7 @@ app.listen(PORT, () => {
 });
 
 startRulesEngine();
+
 
 
 
